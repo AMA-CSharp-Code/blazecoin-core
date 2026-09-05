@@ -1,0 +1,5 @@
+# Blazecoin V2 does not use testnet4 — chainparams calls
+# vFixedSeeds.clear() for that chain. The single placeholder below
+# keeps the generated chainparams_seed_testnet4[] array non-empty
+# (zero-size arrays are not legal C++).
+85.15.179.171:55425

@@ -1,0 +1,7 @@
+# Blazecoin V2 testnet fixed seeds — placeholder.
+# V2 chainparams calls vFixedSeeds.clear() for testnet, so the
+# generated chainparams_seed_test[] is unused at runtime. The entries
+# below exist solely to keep the array non-empty (zero-size arrays are
+# not legal C++). Replace if testnet ever becomes operational.
+85.15.179.171:55424
+91.206.16.214:55424

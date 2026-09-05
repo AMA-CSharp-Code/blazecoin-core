@@ -1,0 +1,9 @@
+# Blazecoin V2 mainnet fixed seeds
+# Operator-known nodes; replaces upstream Bitcoin Core 28 list.
+# Port 55414 is mainnet P2P (55413 is the RPC port — do not confuse).
+# Regenerate chainparamsseeds.h after editing:
+#   python contrib/seeds/generate-seeds.py contrib/seeds > src/chainparamsseeds.h
+85.15.179.171:55414
+91.206.16.214:55414
+51.210.47.141:55414
+54.39.23.245:55414
