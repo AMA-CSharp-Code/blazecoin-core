@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="..\common.init.vcxproj" />
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{7A3E2C11-5D0B-4F7E-9C4A-2B1E6D8F0A44}</ProjectGuid>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\src\crypto\mldsa\fips202.c">
+      <ObjectFileName>$(IntDir)mldsa_fips202.obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto\mldsa\ntt.c">
+      <ObjectFileName>$(IntDir)mldsa_ntt.obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto\mldsa\packing.c">
+      <ObjectFileName>$(IntDir)mldsa_packing.obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto\mldsa\poly.c">
+      <ObjectFileName>$(IntDir)mldsa_poly.obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto\mldsa\polyvec.c">
+      <ObjectFileName>$(IntDir)mldsa_polyvec.obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto\mldsa\reduce.c">
+      <ObjectFileName>$(IntDir)mldsa_reduce.obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto\mldsa\rounding.c">
+      <ObjectFileName>$(IntDir)mldsa_rounding.obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto\mldsa\sign.c">
+      <ObjectFileName>$(IntDir)mldsa_sign.obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto\mldsa\symmetric-shake.c">
+      <ObjectFileName>$(IntDir)mldsa_symmetric-shake.obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto\mldsa44.cpp">
+      <ObjectFileName>$(IntDir)mldsa44.obj</ObjectFileName>
+    </ClCompile>
+  </ItemGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>..\..\src\crypto\mldsa;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DisableSpecificWarnings>4146;4244;4267;4310</DisableSpecificWarnings>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="..\common.vcxproj" />
+</Project>

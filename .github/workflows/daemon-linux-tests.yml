@@ -1,0 +1,81 @@
+# Verifiable Linux CI for the Blazecoin daemon.
+#
+# The fork has no CMake (only the Windows build_msvc + autotools). Autotools on Ubuntu
+# is the standard, CI-friendly Linux build, so this builds with ./autogen + ./configure
+# + make and runs the Blazecoin-specific test suites. (Since 2026-07-06 the ENTIRE stock
+# Boost binary is green with zero exclusions after the economics adaptation — the local
+# gate, test/functional/run_blazecoin_tests.py, runs it unfiltered. This workflow keeps
+# the fast Blazecoin-suite subset for CI turnaround; widen to the full binary if runtime
+# allows.) Wallet is sqlite/descriptor (BDB is left out so we don't need the legacy
+# db4.8 — the Blazecoin suites use descriptor wallets).
+
+name: Daemon tests (Linux)
+
+on:
+  push:
+    branches: ['blazecoin-v2']
+    paths: ['src/**', 'test/**', 'configure.ac', 'Makefile.am', '.github/workflows/daemon-linux-tests.yml']
+  pull_request:
+    paths: ['src/**', 'test/**', 'configure.ac', 'Makefile.am']
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    env:
+      MAKEJOBS: "-j4"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential libtool autotools-dev automake pkg-config bsdmainutils \
+            python3 libevent-dev libboost-dev libboost-test-dev libsqlite3-dev libzmq3-dev
+
+      - name: autogen
+        run: ./autogen.sh
+
+      - name: configure
+        run: ./configure --disable-bench --disable-fuzz-binary --without-bdb
+
+      - name: make
+        run: make $MAKEJOBS
+
+      - name: Locate binaries
+        id: bins
+        run: |
+          TESTBIN=$(ls src/test/test_blazecoin src/test/test_bitcoin 2>/dev/null | head -1)
+          DAEMON=$(ls src/blazecoind src/bitcoind 2>/dev/null | head -1)
+          CLI=$(ls src/blazecoin-cli src/bitcoin-cli 2>/dev/null | head -1)
+          echo "Found test=$TESTBIN daemon=$DAEMON cli=$CLI"
+          echo "testbin=$PWD/$TESTBIN" >> "$GITHUB_OUTPUT"
+          echo "daemon=$PWD/$DAEMON"   >> "$GITHUB_OUTPUT"
+          echo "cli=$PWD/$CLI"         >> "$GITHUB_OUTPUT"
+
+      - name: Unit tests (Blazecoin suites)
+        run: |
+          set -e
+          for f in 'pow_tests/blazecoin_*' \
+                   'pow_tests/scrypt_pow_distinct_from_identity' \
+                   'validation_tests/blazecoin_*' \
+                   'key_tests/blazecoin_import_short_form_der'; do
+            echo "== $f =="
+            "${{ steps.bins.outputs.testbin }}" --run_test="$f"
+          done
+
+      - name: Functional tests (Blazecoin regtest)
+        env:
+          BITCOIND: ${{ steps.bins.outputs.daemon }}
+          BITCOINCLI: ${{ steps.bins.outputs.cli }}
+        run: |
+          set -e
+          cd test/functional
+          for t in feature_blazecoin_subsidy.py feature_blazecoin_maturity.py \
+                   feature_blazecoin_maturity_boundary.py feature_blazecoin_highs_policy.py \
+                   feature_blazecoin_send_receive.py feature_blazecoin_backup_restore.py \
+                   feature_blazecoin_chainparams.py feature_blazecoin_policy_defaults.py; do
+            echo "== $t =="
+            python3 "$t"
+          done
