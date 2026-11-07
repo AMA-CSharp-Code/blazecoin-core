@@ -21,7 +21,14 @@
 #include <random>
 
 namespace wallet {
-BOOST_FIXTURE_TEST_SUITE(coinselector_tests, WalletTestingSetup)
+// Blazecoin: these tests fund the wallet with bech32 coins, and a wallet on MAIN params now refuses to make a bech32
+// address (SegWit is never active there - bug-bounty report 2026-11-06). Regtest has SegWit from block 0, so the
+// coin-selection arithmetic under test is unchanged.
+struct SegwitWalletTestingSetup : public WalletTestingSetup {
+    SegwitWalletTestingSetup() : WalletTestingSetup(ChainType::REGTEST) {}
+};
+
+BOOST_FIXTURE_TEST_SUITE(coinselector_tests, SegwitWalletTestingSetup)
 
 // how many times to run all the tests to have a chance to catch errors that only show up with particular random shuffles
 #define RUN_TESTS 100

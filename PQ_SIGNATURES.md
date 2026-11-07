@@ -327,7 +327,8 @@ notice must travel *inside the protocol the wallet already speaks*, not only on 
      on the next launch.
   2. *Warning* (within two weeks, or `minClientVersion` newer than the running build at any
      distance): same text, amber, not dismissible; Send still works.
-  3. *Stopped* (tip ≥ `forkHeight` and the build lacks the fork rules): red, blocks Send and
+  3. *Stopped* (tip ≥ `forkHeight`, the build lacks the fork rules, **and — since lite 1.3.3 — the
+     announcement is signed by the project**, see "Signed announcements" below): red, blocks Send and
      Receive-address generation, keeps the balance visible as *"last verified at block N"* — the
      verifier's honest state — with the download link. Funds are unaffected; the mnemonic restores
      into the new build.
@@ -341,6 +342,31 @@ notice must travel *inside the protocol the wallet already speaks*, not only on 
   release after this note, with all three fields `null`, so that by the time `H_Q` is announced
   every client in the field can display it. This is the earliest deliverable on the whole
   programme and the cheapest — a day, including tests.
+- **Signed announcements (added 2026-11-06, lite 1.3.3 — bug-bounty report).** The status response is
+  unauthenticated and comes from a gateway the wallet does not otherwise trust, yet as first built
+  it alone decided state 3: a gateway could announce an unknown fork with a claimed tip past its
+  height, stop every send for the users it served, and put its own text into the wallet's alert
+  beside "restore from your recovery phrase". Since 1.3.3:
+  - **Only a signed announcement can reach state 3.** The gateway serves a fourth field,
+    `forkSignature` (configuration `Fork:Signature`): a DER ECDSA (secp256k1) signature, hex, over
+    the double-SHA256 of the UTF-8 text `Blazecoin fork announcement v1\nname=<name, lower case>\n`
+    `height=<height>\nminClientVersion=<version or empty>`. The wallet verifies it against project
+    public keys pinned in the build (`ForkAnnouncement.PinnedKeys`). The gateway never holds the
+    key; it only passes the signature on. The same facts from an unsigned announcement give state
+    2 (Warning, Send still works), with a line saying the notice comes from the gateway.
+  - **No key is pinned yet.** Until the project creates its announcement key and ships a build
+    that pins it, no announcement can be authenticated and state 3 cannot be reached — a real fork
+    would show as a warning. Create and pin the key in the release that precedes the next fork,
+    and sign the announcement when `Fork:*` is set (`ForkAnnouncement.Sign` produces the value).
+  - **Fields are held to a narrow shape:** the fork name is a plain token (letters, digits, `-`,
+    `_`, at most 32), the minimum version is digits and dots; anything else is dropped, so the
+    banner never prints text a gateway supplied.
+  - **A fork this build does not follow cannot be announced at or below the build's shipped
+    checkpoint** — the build was made after that block and follows the chain there.
+  - **The banner is judged at the wallet's own proof-of-work verified tip** where the head has one
+    (Android); the gateway's `daemonHeight` is used only where it does not (the web head). Judging
+    at the verified tip is not sufficient on its own — a gateway can claim a fork height in the
+    past — which is why the signature is the rule and the tip only a refinement.
 - **Test pins:** Lite.Core tests for the three states at the exact boundaries (`forkHeight − tip`
   = 40,321 / 40,320 / 0; `minClientVersion` equal / newer), `null` fields render nothing, and the
   §10.5 dress rehearsal drives a stale head through all three states against the regtest gateway.
@@ -588,6 +614,42 @@ not from the block count at the nominal target** — on a sole-miner chain the t
 wording, the Content Forge facts moving to past tense, the community post, and the header note's rule on copy
 saying *"quantum hardened"* — **met on 2026-09-28, when the treasury moved behind `BQ` addresses** (and wallet
 2.0.9 began defaulting receive addresses, change and sweeps to `BQ`).
+
+## 17. Phase 2 ideas — HYPOTHETICAL (brainstorm 2026-10-30, no dates, no commitments)
+
+Captured from a "how would a quantum computer crack our wallets, and what could replace the maths" conversation
+(Andrew, 2026-10-30). Nothing here is planned; each item is a possible third consensus change or custody upgrade
+and would go through the governance ballot first. Wallet-side ideas from the same conversation live in the MAUI
+`ROADMAP.md` §H.
+
+1. **Commit-before-reveal spends.** The mempool race (a spend reveals its ECDSA public key and asks for
+   confirmation in the same breath; a fast enough attacker derives the key and races a conflicting spend) is
+   closed by two steps: publish a hash commitment to the spend, let it confirm, then reveal the signature a block
+   later. Protects *legacy* `B…` outputs during the migration without touching their keys. Small consensus change;
+   the Bitcoin discussion is around BIP-360 and the "commit/reveal" recovery proposals.
+2. **Algorithm-ID additions (already provided for by P2PQH).** ML-DSA-65 / ML-DSA-87 for a higher security
+   level; FN-DSA (Falcon-512, ~666-byte signatures vs 2,420) once FIPS 206 and constant-time libraries settle;
+   SLH-DSA (SPHINCS+, hash-based, 7.8–17 KB) as the lifeboat if lattices ever weaken. Each is a consensus change,
+   none is a new address format. No ECDSA+PQ hybrid: doubles the size and only guards against a classical ML-DSA
+   break, the one failure nobody expects.
+3. **Exposed-key sunset.** Past a chosen height, outputs whose ECDSA public key is already on-chain cannot be spent
+   with a bare ECDSA signature: either a PQ proof of ownership (derived from the same seed) or frozen. The only
+   answer for coins whose owners never act (≈46 % of supply sat on exposed addresses at 2026-09-14, much of it
+   dormant 2014 coin). Pure governance question; needs `blazecoin-governance` M1 ballots before it is even
+   proposed.
+4. **Proactive secret sharing for the treasury key.** Split the BQ key into shares on several machines and
+   re-randomise the shares on a timer without changing the key; an attacker must compromise a quorum inside one
+   epoch. Defends against theft over time (not against the maths). Only worth building once the treasury lives on
+   more than one box.
+5. **Extra physical entropy for key ceremonies.** A radioactive-decay (Geiger) or quantum-noise feed mixed into the
+   generator as one more independent source, so no single source can be the point of failure. Cheap; the node's
+   generator already mixes OS entropy, CPU hardware noise and timings.
+
+Rejected in the same conversation (recorded so they are not re-raised): symbol alphabets instead of bits (an
+encoding, not security); biometrics / DNA / iris as keys (not secret, not repeatable, not revocable; fine as a
+device gate); keys churning thousands of times a second (the attack is on a recorded public key, so speed adds
+nothing; one key per spend is the useful rate); "polymorphic" secret schemes (Kerckhoffs); wave / chaotic-laser /
+frequency-hopping encryption (carriers, not keys; the one usable wave idea is channel-based pairing, see ROADMAP §H).
 
 ## 14. References
 

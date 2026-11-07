@@ -973,7 +973,9 @@ public:
                 if (!SeedFromProvider(arg, *m_seed_id, seed32) || !DeriveAt(seed32, index, derived)) return false;
                 pubkey = std::move(derived.pubkey);
             }
-            if (write_cache) write_cache->CachePQPubKey(index, pubkey);
+            // A key that is not an ML-DSA-44 public key's length yields no address at all.
+            if (pubkey.size() != mldsa44::PUBKEY_SIZE) return false;
+            if (write_cache && !write_cache->CachePQPubKey(index, pubkey)) return false;
         }
         uint256 pqkh;
         const CScript script = ScriptFor(pubkey, pqkh);
@@ -2324,9 +2326,16 @@ bool DescriptorCache::GetCachedLastHardenedExtPubKey(uint32_t key_exp_pos, CExtP
     return true;
 }
 
-void DescriptorCache::CachePQPubKey(uint32_t der_index, const std::vector<unsigned char>& pubkey)
+bool DescriptorCache::CachePQPubKey(uint32_t der_index, const std::vector<unsigned char>& pubkey)
 {
+    // Blazecoin: an ML-DSA-44 public key is exactly 1,312 bytes, and nothing else may be cached as
+    // one. The cache is filled from wallet.dat as well as from derivation, and a key of any other
+    // length used to be stored and then turned into an address: OP_CHECKPQSIG checks the key blob's
+    // length before anything else, so no signature could ever spend what was paid there
+    // (bug-bounty report 2026-11-06). Refused here, at the one place every path goes through.
+    if (pubkey.size() != mldsa44::PUBKEY_SIZE) return false;
     m_pq_pubkeys[der_index] = pubkey;
+    return true;
 }
 
 bool DescriptorCache::GetCachedPQPubKey(uint32_t der_index, std::vector<unsigned char>& pubkey) const
@@ -2383,8 +2392,9 @@ DescriptorCache DescriptorCache::MergeAndDiff(const DescriptorCache& other)
             }
             continue;
         }
-        CachePQPubKey(der_index, pubkey);
-        diff.CachePQPubKey(der_index, pubkey);
+        if (!CachePQPubKey(der_index, pubkey) || !diff.CachePQPubKey(der_index, pubkey)) {
+            throw std::runtime_error(std::string(__func__) + ": New cached PQ pubkey is not an ML-DSA-44 public key");
+        }
     }
     return diff;
 }

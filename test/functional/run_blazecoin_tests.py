@@ -49,6 +49,7 @@ BLAZECOIN_TESTS = [
     "feature_blazecoin_backup_restore.py",
     "feature_blazecoin_chainparams.py",
     "feature_blazecoin_policy_defaults.py",
+    "feature_blazecoin_no_witness.py --descriptors",
     "feature_blazecoin_phoenix413.py",
     "feature_blazecoin_pqsig.py",
     "wallet_blazecoin_pq.py",

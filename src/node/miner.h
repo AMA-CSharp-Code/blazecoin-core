@@ -152,6 +152,8 @@ private:
     // Chain context for the block
     int nHeight;
     int64_t m_lock_time_cutoff;
+    /** Whether the block being built may carry witness data (SegWit active for it). Blazecoin: never on mainnet. */
+    bool m_include_witness{false};
 
     const CChainParams& chainparams;
     const CTxMemPool* const m_mempool;

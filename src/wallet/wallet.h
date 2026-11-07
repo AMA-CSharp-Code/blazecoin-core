@@ -655,6 +655,14 @@ public:
 
     /** Blazecoin: the height from which P2PQH outputs are standard and spendable (DEPLOYMENT_PQSIG). */
     int PQSigActivationHeight() const;
+    /** Blazecoin: SegWit's activation height (never on mainnet). A bech32/bech32m output made before it can never be spent. */
+    int SegwitActivationHeight() const;
+    /** True once SegWit is active for the next block - the only time a witness address or output is any use. */
+    bool IsSegwitActiveForNextBlock() const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    /** bech32 / bech32m: the output types that are witness programs. */
+    static bool IsWitnessOutputType(OutputType type) { return type == OutputType::BECH32 || type == OutputType::BECH32M; }
+    /** The words every refusal of a witness address or output uses on this chain. */
+    static const char* SegwitUnavailableMessage();
     /** Blazecoin: whether DEPLOYMENT_PQSIG is active for the block after the wallet's last processed block -
      *  the condition under which the mempool will accept a transaction paying to or spending a P2PQH output. */
     bool IsPQSigActiveForNextBlock() const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);

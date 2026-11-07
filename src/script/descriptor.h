@@ -77,7 +77,8 @@ public:
     ExtPubKeyMap GetCachedLastHardenedExtPubKeys() const;
 
     /** Blazecoin: cache the ML-DSA-44 public key expanded at der_index of a pqkh() descriptor */
-    void CachePQPubKey(uint32_t der_index, const std::vector<unsigned char>& pubkey);
+    /** Returns false, and caches nothing, unless the key is exactly an ML-DSA-44 public key's length. */
+    [[nodiscard]] bool CachePQPubKey(uint32_t der_index, const std::vector<unsigned char>& pubkey);
     /** Blazecoin: retrieve the cached ML-DSA-44 public key at der_index */
     bool GetCachedPQPubKey(uint32_t der_index, std::vector<unsigned char>& pubkey) const;
     /** Blazecoin: retrieve all cached ML-DSA-44 public keys */

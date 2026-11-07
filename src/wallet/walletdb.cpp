@@ -903,7 +903,13 @@ static DBErrors LoadDescriptorWalletRecords(CWallet* pwallet, DatabaseBatch& bat
 
             std::vector<unsigned char> pubkey;
             value >> pubkey;
-            cache.CachePQPubKey(der_index, pubkey);
+            // A record that is not a whole ML-DSA-44 public key is corruption (or tampering), and
+            // the wallet says so rather than hand out an address nothing can spend from
+            // (bug-bounty report 2026-11-06).
+            if (!cache.CachePQPubKey(der_index, pubkey)) {
+                err = "Error: Corrupt post-quantum public key cache entry in the wallet database";
+                return DBErrors::CORRUPT;
+            }
             return DBErrors::LOAD_OK;
         });
         result = std::max(result, pq_cache_res.m_result);

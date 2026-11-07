@@ -62,6 +62,15 @@ static bool UseMaxSig(const std::optional<CTxIn>& txin, const CCoinControl* coin
  * @param tx_is_segwit Whether the transaction has at least a single input spending a segwit coin.
  * @param can_grind_r Whether the signer will be able to grind the R of the signature.
  */
+/** Blazecoin: a witness-program scriptPubKey - what a bech32 / bech32m destination pays to. Never spendable here
+ *  while SegWit is not active (bug-bounty report 2026-11-06). A P2PQH script is not one (it begins with a push). */
+static bool IsWitnessOutput(const CScript& script)
+{
+    int version;
+    std::vector<unsigned char> program;
+    return script.IsWitnessProgram(version, program);
+}
+
 static std::optional<int64_t> MaxInputWeight(const Descriptor& desc, const std::optional<CTxIn>& txin,
                                              const CCoinControl* coin_control, const bool tx_is_segwit,
                                              const bool can_grind_r) {
@@ -307,6 +316,11 @@ util::Result<PreSelectedInputs> FetchSelectedInputs(const CWallet& wallet, const
         if (pq::IsPayToPQKeyHash(txout.scriptPubKey) && !wallet.IsPQSigActiveForNextBlock()) {
             return util::Error{strprintf(_("Pre-selected input %s is a post-quantum output, which cannot be spent until block %d"), outpoint.ToString(), wallet.PQSigActivationHeight())};
         }
+        // Blazecoin: a witness output has no spend path while SegWit is not active (never, on mainnet); a spend of one
+        // is refused by the mempool and would otherwise sit in the wallet unbroadcast (bug-bounty report 2026-11-06).
+        if (IsWitnessOutput(txout.scriptPubKey) && !wallet.IsSegwitActiveForNextBlock()) {
+            return util::Error{strprintf(_("Pre-selected input %s is a SegWit (bech32) output, which cannot be spent on this chain - SegWit is not active"), outpoint.ToString())};
+        }
 
         /* Set some defaults for depth, spendable, solvable, safe, time, and from_me as these don't matter for preset inputs since no selection is being done. */
         COutput output(outpoint, txout, /*depth=*/ 0, input_bytes, /*spendable=*/ true, /*solvable=*/ true, /*safe=*/ true, /*time=*/ 0, /*from_me=*/ false, coin_selection_params.m_effective_feerate);
@@ -432,6 +446,10 @@ CoinsResult AvailableCoins(const CWallet& wallet,
             bool spendable = ((mine & ISMINE_SPENDABLE) != ISMINE_NO) || (((mine & ISMINE_WATCH_ONLY) != ISMINE_NO) && (coinControl && coinControl->fAllowWatchOnly && solvable));
             if (!pqsig_active && pq::IsPayToPQKeyHash(output.scriptPubKey)) {
                 // Blazecoin: listed (listunspent shows spendable=false) but never selected before H_Q.
+                spendable = false;
+            }
+            if (IsWitnessOutput(output.scriptPubKey) && !wallet.IsSegwitActiveForNextBlock()) {
+                // Blazecoin: a witness coin cannot be spent while SegWit is not active - listed, never selected.
                 spendable = false;
             }
 
@@ -1055,6 +1073,12 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     if (!pqsig_active && change_type == OutputType::PQ) {
         return util::Error{strprintf(_("post-quantum outputs are not standard until block %d (change type pq)"), wallet.PQSigActivationHeight())};
     }
+    // Blazecoin: change to a witness address would be lost for good (bug-bounty report 2026-11-06: -changetype=bech32
+    // sent every send's change to an address nothing can spend from, and the spend of it then stalled mining).
+    const bool segwit_active = wallet.IsSegwitActiveForNextBlock();
+    if (!segwit_active && CWallet::IsWitnessOutputType(change_type)) {
+        return util::Error{Untranslated(std::string("change type ") + FormatOutputType(change_type) + ": " + CWallet::SegwitUnavailableMessage())};
+    }
     ReserveDestination reservedest(&wallet, change_type);
     unsigned int outputs_to_subtract_fee_from = 0; // The number of outputs which we are subtracting the fee from
     for (const auto& recipient : vecSend) {
@@ -1063,6 +1087,9 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
         }
         if (!pqsig_active && std::holds_alternative<PQKeyHash>(recipient.dest)) {
             return util::Error{strprintf(_("post-quantum outputs are not standard until block %d"), wallet.PQSigActivationHeight())};
+        }
+        if (!segwit_active && IsWitnessOutput(GetScriptForDestination(recipient.dest))) {
+            return util::Error{Untranslated(CWallet::SegwitUnavailableMessage())};
         }
 
         // Include the fee cost for outputs.

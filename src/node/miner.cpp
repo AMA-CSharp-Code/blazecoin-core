@@ -138,6 +138,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
 
     pblock->nTime = TicksSinceEpoch<std::chrono::seconds>(NodeClock::now());
     m_lock_time_cutoff = pindexPrev->GetMedianTimePast();
+    m_include_witness = DeploymentActiveAfter(pindexPrev, m_chainstate.m_chainman, Consensus::DEPLOYMENT_SEGWIT);
 
     int nPackagesSelected = 0;
     int nDescendantsUpdated = 0;
@@ -213,10 +214,16 @@ bool BlockAssembler::TestPackage(uint64_t packageSize, int64_t packageSigOpsCost
 
 // Perform transaction-level checks before adding to block:
 // - transaction finality (locktime)
+// - no witness data unless the block may carry it (Blazecoin: SegWit never active). The mempool refuses such a
+//   transaction already; this is the second guard, so that one that slipped in some other way (a node upgraded with
+//   it in memory, a future policy change) can never again make every template invalid (bug-bounty report 2026-11-06).
 bool BlockAssembler::TestPackageTransactions(const CTxMemPool::setEntries& package) const
 {
     for (CTxMemPool::txiter it : package) {
         if (!IsFinalTx(it->GetTx(), nHeight, m_lock_time_cutoff)) {
+            return false;
+        }
+        if (!m_include_witness && it->GetTx().HasWitness()) {
             return false;
         }
     }

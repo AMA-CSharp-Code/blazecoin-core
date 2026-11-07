@@ -56,6 +56,15 @@ CAmount GetDustThreshold(const CTxOut& txout, const CFeeRate& dustRelayFeeIn)
         // sum the sizes of the parts of a transaction input
         // with 75% segwit discount applied to the script size.
         nSize += (32 + 4 + 1 + (107 / WITNESS_SCALE_FACTOR) + 4);
+    } else if (pq::IsPayToPQKeyHash(txout.scriptPubKey)) {
+        // Blazecoin: a P2PQH output is spent by <sig:2420> <keyblob:1313>, each behind a 3-byte
+        // push - a 3,739-byte scriptSig, none of it discounted (PQ_SIGNATURES.md s3.3, s4). The
+        // input is therefore 32 + 4 + 3 (the scriptSig's length) + 3,739 + 4 = 3,782 bytes, not
+        // the 148 of a P2PKH spend that the branch below assumes. Priced at 148 the threshold
+        // came to 573 satoshis for an output that takes 3,825 bytes to create and spend:
+        // 11,475 at the default rate (bug-bounty report 2026-11-06).
+        const size_t scriptsig_size = 3 + pq::PQ_MLDSA44_SIG_SIZE + 3 + pq::PQ_MLDSA44_KEYBLOB_SIZE;
+        nSize += (32 + 4 + GetSizeOfCompactSize(scriptsig_size) + scriptsig_size + 4);
     } else {
         nSize += (32 + 4 + 1 + 107 + 4); // the 148 mentioned above
     }

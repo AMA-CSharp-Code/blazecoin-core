@@ -12,7 +12,12 @@
 #include <boost/test/unit_test.hpp>
 
 namespace wallet {
-BOOST_FIXTURE_TEST_SUITE(group_outputs_tests, TestingSetup)
+// Blazecoin: bech32 coins need a chain where SegWit is active - regtest, not MAIN (bug-bounty report 2026-11-06).
+struct RegtestTestingSetup : public TestingSetup {
+    RegtestTestingSetup() : TestingSetup(ChainType::REGTEST) {}
+};
+
+BOOST_FIXTURE_TEST_SUITE(group_outputs_tests, RegtestTestingSetup)
 
 static int nextLockTime = 0;
 

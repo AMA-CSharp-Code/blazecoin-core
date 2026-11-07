@@ -444,6 +444,36 @@ BOOST_AUTO_TEST_CASE(pqsig_policy)
     BOOST_CHECK_EQUAL(reason, "scriptsig-size");
 }
 
+BOOST_AUTO_TEST_CASE(pqsig_dust_threshold)
+{
+    // Bug-bounty report 2026-11-06: GetDustThreshold priced a P2PQH output as if it were spent by a
+    // 148-byte P2PKH input, giving 573 satoshis. Spending it takes a 3,739-byte scriptSig: the input
+    // is 32 + 4 + 3 + 3,739 + 4 = 3,782 bytes, and with the 43-byte output that is 3,825 bytes -
+    // 11,475 satoshis at the default 3,000 sat/kvB.
+    const CFeeRate dust{DUST_RELAY_TX_FEE};
+    const CScript pq_spk = pq::GetScriptForPQKeyHash(uint256::ZERO);
+    BOOST_CHECK_EQUAL(GetSerializeSize(CTxOut(0, pq_spk)), 43U);
+    BOOST_CHECK_EQUAL(GetDustThreshold(CTxOut(0, pq_spk), dust), 11475); // was 573
+    BOOST_CHECK(IsDust(CTxOut(11474, pq_spk), dust));
+    BOOST_CHECK(!IsDust(CTxOut(11475, pq_spk), dust));
+    // It follows the rate like every other output type.
+    BOOST_CHECK_EQUAL(GetDustThreshold(CTxOut(0, pq_spk), CFeeRate{1000}), 3825);
+    BOOST_CHECK_EQUAL(GetDustThreshold(CTxOut(0, pq_spk), CFeeRate{0}), 0);
+
+    // The legacy figure is untouched.
+    const CScript p2pkh = CScript() << OP_DUP << OP_HASH160 << std::vector<unsigned char>(20, 0x11) << OP_EQUALVERIFY << OP_CHECKSIG;
+    BOOST_CHECK_EQUAL(GetDustThreshold(CTxOut(0, p2pkh), dust), 546);
+
+    // And it is what standardness applies: one satoshi under is refused as dust, the threshold passes.
+    CMutableTransaction tx{DecodeTx(V::SIGHASH[0].tx, V::SIGHASH[0].tx_len)};
+    std::string reason;
+    tx.vout.assign(1, CTxOut(11474, pq_spk));
+    BOOST_CHECK(!IsStandardTx(CTransaction(tx), MAX_OP_RETURN_RELAY, true, dust, reason, true));
+    BOOST_CHECK_EQUAL(reason, "dust");
+    tx.vout.assign(1, CTxOut(11475, pq_spk));
+    BOOST_CHECK(IsStandardTx(CTransaction(tx), MAX_OP_RETURN_RELAY, true, dust, reason, true));
+}
+
 BOOST_AUTO_TEST_CASE(pqsig_interpreter_edges)
 {
     ScriptError err;

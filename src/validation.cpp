@@ -810,6 +810,30 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     // DEPLOYMENT_PQSIG state (PQ_SIGNATURES.md s3.6).
     const bool pqsig_active{DeploymentActiveAfter(m_active_chainstate.m_chain.Tip(), m_active_chainstate.m_chainman, Consensus::DEPLOYMENT_PQSIG)};
 
+    // Blazecoin: SegWit is never active on this chain (SegwitHeight = BLAZECOIN_BIP_NEVER_ACTIVE), so a block may
+    // carry no witness data at all - CheckWitnessMalleation refuses it without a commitment. A witness transaction
+    // that entered the mempool was nevertheless picked by the block assembler, and every template then failed
+    // TestBlockValidity: no block could be built while it sat there (bug-bounty report 2026-11-06). Refused here, for
+    // every witness version, before anything else looks at it - and since mempool.dat is reloaded through this same
+    // path, a node restarted with such a transaction saved drops it. Upstream Core had the same rule ("no-witness-yet")
+    // until SegWit was buried.
+    const bool segwit_active_next{DeploymentActiveAfter(m_active_chainstate.m_chain.Tip(), m_active_chainstate.m_chainman, Consensus::DEPLOYMENT_SEGWIT)};
+    if (tx.HasWitness() && !segwit_active_next) {
+        return state.Invalid(TxValidationResult::TX_NOT_STANDARD, "no-witness-yet");
+    }
+    // ...and no transaction may CREATE a witness output while SegWit is not active: nothing could ever spend it, so
+    // relaying it would only help someone lose coins (the same report - a bech32 address paid from the node wallet).
+    // A P2PQH script is not a witness program (it begins with a 32-byte push, not OP_0..OP_16).
+    if (!segwit_active_next) {
+        for (const CTxOut& out : tx.vout) {
+            int version;
+            std::vector<unsigned char> program;
+            if (out.scriptPubKey.IsWitnessProgram(version, program)) {
+                return state.Invalid(TxValidationResult::TX_NOT_STANDARD, "no-witness-outputs-yet");
+            }
+        }
+    }
+
     // Rather not work on nonstandard transactions (unless -testnet/-regtest)
     std::string reason;
     if (m_pool.m_opts.require_standard && !IsStandardTx(tx, m_pool.m_opts.max_datacarrier_bytes, m_pool.m_opts.permit_bare_multisig, m_pool.m_opts.dust_relay_feerate, reason, pqsig_active)) {

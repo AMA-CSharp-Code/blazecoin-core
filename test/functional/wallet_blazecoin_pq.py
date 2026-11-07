@@ -166,6 +166,21 @@ class BlazecoinPQWalletTest(BitcoinTestFramework):
         assert_equal([u["amount"] for u in utxos], [10, 20, 30, 40])
         assert all(u["spendable"] for u in utxos)
 
+        self.log.info("Dust: a P2PQH output is priced by the 3,782-byte input that spends it (11,475 sat), not a legacy input's 148 (573 sat)")
+        # Bug-bounty report 2026-11-06. 43 bytes of output + 3,782 of input = 3,825 bytes at 3,000 sat/kvB.
+        assert_raises_rpc_error(-6, "Transaction amount too small", miner.sendtoaddress, stranger, Decimal("0.00011474"))
+        coin = miner.listunspent()[0]
+        for tiny, verdict in ((Decimal("0.00011474"), "dust"), (Decimal("0.00011475"), None)):
+            raw = miner.createrawtransaction([{"txid": coin["txid"], "vout": coin["vout"]}],
+                                             {stranger: tiny, mine_addr: coin["amount"] - Decimal("0.001") - tiny})
+            res = node.testmempoolaccept([miner.signrawtransactionwithwallet(raw)["hex"]])[0]
+            assert_equal(res.get("reject-reason"), verdict)
+            assert_equal(res["allowed"], verdict is None)
+        # A legacy output of the same size was never dust, and still is not.
+        raw = miner.createrawtransaction([{"txid": coin["txid"], "vout": coin["vout"]}],
+                                         {miner.getnewaddress("", "legacy"): Decimal("0.00000546"), mine_addr: coin["amount"] - Decimal("0.00100546")})
+        assert_equal(node.testmempoolaccept([miner.signrawtransactionwithwallet(raw)["hex"]])[0]["allowed"], True)
+
         self.log.info("Spend 1: sendtoaddress signs with ML-DSA-44 inside the wallet")
         txid1 = pq.sendtoaddress(mine_addr, 5)
         assert txid1 in node.getrawmempool()
@@ -258,6 +273,18 @@ class BlazecoinPQWalletTest(BitcoinTestFramework):
         res = watch.importdescriptors([{"desc": pub_external, "timestamp": "now", "range": 20}])
         assert_equal(res[0]["success"], False)
         assert "Cannot expand descriptor" in res[0]["error"]["message"]
+
+        self.log.info("importdescriptors warns that a timelock (after/older) is not enforced on this chain")
+        # Bug-bounty report 2026-11-06: BIP65/68/112 are never active here, so a CLTV/CSV descriptor imported with no
+        # word about it. The import still succeeds (the script is valid) - with the warning.
+        pubkey = miner.getaddressinfo(mine_addr)["pubkey"]
+        for locked in (f"wsh(and_v(v:pk({pubkey}),after(1000000)))", f"wsh(and_v(v:pk({pubkey}),older(144)))"):
+            desc = node.getdescriptorinfo(locked)["descriptor"]
+            res = watch.importdescriptors([{"desc": desc, "timestamp": "now"}])[0]
+            assert_equal(res["success"], True)
+            assert any("does not enforce timelocks" in w for w in res.get("warnings", [])), res
+        plain = node.getdescriptorinfo(f"pkh({pubkey})")["descriptor"]
+        assert not any("timelock" in w for w in watch.importdescriptors([{"desc": plain, "timestamp": "now"}])[0].get("warnings", []))
 
         self.log.info("Encryption: the PQ seed rides the encrypted-key path; a restart keeps the cached pubkeys")
         addr5 = pq.getnewaddress("", "pq")

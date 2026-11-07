@@ -757,6 +757,25 @@ BOOST_AUTO_TEST_CASE(descriptor_pqkh_blazecoin)
         FlatSigningProvider out;
         BOOST_CHECK(!parse_pub->ExpandFromCache(V::DERIVATION_COUNT + 5, cache, scripts, out));
     }
+    {
+        // Bug-bounty report 2026-11-06: the cache took a "public key" of any length (it is filled from
+        // wallet.dat too), and the address made from one can never be spent from - OP_CHECKPQSIG
+        // rejects the key blob on its length. Only a whole ML-DSA-44 public key is cached.
+        const uint32_t index = V::DERIVATION[0].index;
+        DescriptorCache bad;
+        BOOST_CHECK(!bad.CachePQPubKey(index, {}));
+        BOOST_CHECK(!bad.CachePQPubKey(index, std::vector<unsigned char>(1311, 0x01)));
+        BOOST_CHECK(!bad.CachePQPubKey(index, std::vector<unsigned char>(1313, 0x01)));
+        BOOST_CHECK(!bad.CachePQPubKey(index, std::vector<unsigned char>(32, 0x01)));
+        BOOST_CHECK(bad.GetCachedPQPubKeys().empty());
+        std::vector<CScript> scripts;
+        FlatSigningProvider out;
+        BOOST_CHECK(!parse_pub->ExpandFromCache(index, bad, scripts, out)); // nothing cached, so no address
+        BOOST_CHECK(scripts.empty());
+        BOOST_CHECK(bad.CachePQPubKey(index, ParseHex(V::DERIVATION[0].pubkey)));
+        BOOST_REQUIRE(parse_pub->ExpandFromCache(index, bad, scripts, out));
+        BOOST_CHECK_EQUAL(HexStr(scripts[0]), V::DERIVATION[0].scriptPubKey);
+    }
 
     // Single public form: what InferDescriptor produces, and a watch-only importable single address.
     const std::string single = std::string("pqkh(mldsa44pub:") + V::DERIVATION[0].pubkey + ")";

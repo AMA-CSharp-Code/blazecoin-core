@@ -27,8 +27,10 @@
 #include <wallet/coincontrol.h>
 #include <wallet/scriptpubkeyman.h>
 #include <wallet/spend.h>
+#include <wallet/test/util.h>
 #include <wallet/test/wallet_test_fixture.h>
 #include <wallet/wallet.h>
+#include <wallet/walletdb.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -159,6 +161,44 @@ BOOST_AUTO_TEST_CASE(pq_wallet_addresses_and_descriptors)
     const CTxDestination other{PQKeyHash(uint256::ONE)};
     BOOST_CHECK(m_wallet.IsMine(other) == ISMINE_NO);
     BOOST_CHECK(!m_wallet.GetSolvingProvider(GetScriptForDestination(other)));
+}
+
+BOOST_AUTO_TEST_CASE(pq_wallet_refuses_a_corrupt_pubkey_cache_record)
+{
+    // Bug-bounty report 2026-11-06: a "walletdescriptorpqcache" record holding anything other than a
+    // whole ML-DSA-44 public key was loaded as one, and the wallet then tracked - and handed out -
+    // an address nothing can spend from. Such a record is corruption, and the wallet says so.
+    {
+        LOCK(m_wallet.cs_wallet);
+        SetupDescriptorWallet();
+    }
+    NewPQDestination();
+    MockableData records = GetMockableDatabase(m_wallet).m_records;
+
+    {
+        // The untouched copy loads.
+        const std::shared_ptr<CWallet> intact(new CWallet(m_node.chain.get(), "", CreateMockableWalletDatabase(records)));
+        BOOST_CHECK(intact->LoadWallet() == DBErrors::LOAD_OK);
+    }
+
+    for (const size_t bad_size : {size_t{0}, mldsa44::PUBKEY_SIZE - 1, mldsa44::PUBKEY_SIZE + 1}) {
+        MockableData damaged = records;
+        size_t touched = 0;
+        for (auto& [key, value] : damaged) {
+            DataStream key_stream{key};
+            std::string type;
+            key_stream >> type;
+            if (type != "walletdescriptorpqcache") continue;
+            DataStream short_value;
+            short_value << std::vector<unsigned char>(bad_size, 0x42);
+            value = SerializeData{short_value.begin(), short_value.end()};
+            ++touched;
+            break;
+        }
+        BOOST_REQUIRE_EQUAL(touched, 1U);
+        const std::shared_ptr<CWallet> corrupt(new CWallet(m_node.chain.get(), "", CreateMockableWalletDatabase(damaged)));
+        BOOST_CHECK(corrupt->LoadWallet() == DBErrors::CORRUPT);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(pq_wallet_sign_spend_and_encrypt)

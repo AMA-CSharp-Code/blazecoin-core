@@ -1472,6 +1472,16 @@ static UniValue ProcessDescriptorImport(CWallet& wallet, const UniValue& data, c
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, error);
         }
 
+        // Blazecoin: BIP65 (CLTV), BIP68/112 (sequence locks, CSV) and BIP113 are never active on this chain
+        // (BLAZECOIN_V2.md), so a timelock in a script is a no-op in a block - the mempool refuses an early spend,
+        // a miner can confirm it. A descriptor that leans on one imported without a word (bug-bounty report
+        // 2026-11-06). The chain is not changing; the import now says what the timelock is worth here.
+        if (descriptor.find("after(") != std::string::npos || descriptor.find("older(") != std::string::npos) {
+            warnings.push_back("This descriptor uses a timelock (after/older). Blazecoin does not enforce timelocks in blocks - "
+                               "BIP65 and BIP68/112 are not active on this chain - so a miner can confirm a spend before the lock, "
+                               "and this descriptor gives no protection.");
+        }
+
         // Range check
         int64_t range_start = 0, range_end = 1, next_index = 0;
         if (!parsed_desc->IsRange() && data.exists("range")) {

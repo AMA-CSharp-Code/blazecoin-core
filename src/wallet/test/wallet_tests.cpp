@@ -978,7 +978,13 @@ BOOST_FIXTURE_TEST_CASE(RemoveTxs, TestChain100Setup)
  * Checks a wallet invalid state where the inputs (prev-txs) of a new arriving transaction are not marked dirty,
  * while the transaction that spends them exist inside the in-memory wallet tx map (not stored on db due a db write failure).
  */
-BOOST_FIXTURE_TEST_CASE(wallet_sync_tx_invalid_state_test, TestingSetup)
+// Blazecoin: this test funds the wallet through a bech32m address, which the wallet refuses under main-net params
+// (SegWit never activates there - bug-bounty fix 2026-11-06); regtest params keep upstream's shape of the test.
+struct RegtestTestingSetup : public TestingSetup {
+    RegtestTestingSetup() : TestingSetup(ChainType::REGTEST) {}
+};
+
+BOOST_FIXTURE_TEST_CASE(wallet_sync_tx_invalid_state_test, RegtestTestingSetup)
 {
     CWallet wallet(m_node.chain.get(), "", CreateMockableWalletDatabase());
     {

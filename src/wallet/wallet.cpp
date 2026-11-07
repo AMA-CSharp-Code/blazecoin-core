@@ -2272,6 +2272,25 @@ int CWallet::PQSigActivationHeight() const
     return Params().GetConsensus().DeploymentHeight(Consensus::DEPLOYMENT_PQSIG);
 }
 
+int CWallet::SegwitActivationHeight() const
+{
+    return Params().GetConsensus().DeploymentHeight(Consensus::DEPLOYMENT_SEGWIT);
+}
+
+bool CWallet::IsSegwitActiveForNextBlock() const
+{
+    AssertLockHeld(cs_wallet);
+    return m_last_block_processed_height + 1 >= SegwitActivationHeight();
+}
+
+const char* CWallet::SegwitUnavailableMessage()
+{
+    // Bug-bounty report 2026-11-06: an explicit bech32 request got a working address, a send to it confirmed, and the
+    // coins were gone - SegWit never activates here, so nothing can spend a witness output. -changetype=bech32 did the
+    // same to every send's change. The default type (legacy) was guarded; the explicit requests were not.
+    return "bech32/bech32m (SegWit) addresses cannot be used on this chain: SegWit is not active, so coins sent to one could never be spent. Use a legacy B... or a post-quantum BQ... address.";
+}
+
 bool CWallet::IsPQSigActiveForNextBlock() const
 {
     AssertLockHeld(cs_wallet);
@@ -2583,6 +2602,9 @@ bool CWallet::TopUpKeyPool(unsigned int kpSize)
 util::Result<CTxDestination> CWallet::GetNewDestination(const OutputType type, const std::string label)
 {
     LOCK(cs_wallet);
+    if (IsWitnessOutputType(type) && !IsSegwitActiveForNextBlock()) {
+        return util::Error{Untranslated(SegwitUnavailableMessage())};
+    }
     auto spk_man = GetScriptPubKeyMan(type, /*internal=*/false);
     if (!spk_man) {
         if (type == OutputType::PQ) {
@@ -2604,6 +2626,9 @@ util::Result<CTxDestination> CWallet::GetNewDestination(const OutputType type, c
 util::Result<CTxDestination> CWallet::GetNewChangeDestination(const OutputType type)
 {
     LOCK(cs_wallet);
+    if (IsWitnessOutputType(type) && !IsSegwitActiveForNextBlock()) {
+        return util::Error{Untranslated(SegwitUnavailableMessage())};
+    }
 
     ReserveDestination reservedest(this, type);
     auto op_dest = reservedest.GetReservedDestination(true);
@@ -3114,6 +3139,10 @@ std::shared_ptr<CWallet> CWallet::Create(WalletContext& context, const std::stri
             error = strprintf(_("Unknown address type '%s'"), args.GetArg("-addresstype", ""));
             return nullptr;
         }
+        if (IsWitnessOutputType(parsed.value()) && Params().GetConsensus().SegwitHeight == Consensus::BLAZECOIN_BIP_NEVER_ACTIVE) {
+            error = Untranslated(std::string("-addresstype: ") + SegwitUnavailableMessage());
+            return nullptr;
+        }
         walletInstance->m_default_address_type = parsed.value();
     }
 
@@ -3121,6 +3150,10 @@ std::shared_ptr<CWallet> CWallet::Create(WalletContext& context, const std::stri
         std::optional<OutputType> parsed = ParseOutputType(args.GetArg("-changetype", ""));
         if (!parsed) {
             error = strprintf(_("Unknown change type '%s'"), args.GetArg("-changetype", ""));
+            return nullptr;
+        }
+        if (IsWitnessOutputType(parsed.value()) && Params().GetConsensus().SegwitHeight == Consensus::BLAZECOIN_BIP_NEVER_ACTIVE) {
+            error = Untranslated(std::string("-changetype: ") + SegwitUnavailableMessage());
             return nullptr;
         }
         walletInstance->m_default_change_type = parsed.value();
