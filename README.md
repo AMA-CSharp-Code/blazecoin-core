@@ -37,6 +37,10 @@ a Linux x86_64 daemon tarball (`blazecoind` + `blazecoin-cli` + a default `blaze
 desktop wallet installer, which bundles the Windows daemon, is released from the companion
 `blazecoin-wallet` repository. Every release carries a `SHA256SUMS` file — verify before you run.
 
+**Running a node on Linux:** [`doc/install-linux.md`](doc/install-linux.md) is a step-by-step guide
+(download, verify, install, configuration, systemd service, firewall, upgrades). The service file
+is [`contrib/init/blazecoind.service`](contrib/init/blazecoind.service).
+
 ## Building
 
 This is Bitcoin Core 28 underneath, so its build documentation applies verbatim: `doc/build-unix.md`,

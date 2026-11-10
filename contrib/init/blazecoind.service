@@ -1,0 +1,34 @@
+# systemd unit for a Blazecoin V2 node - the same unit the public relays run.
+# Install:  sudo cp blazecoind.service /etc/systemd/system/
+#           sudo systemctl daemon-reload && sudo systemctl enable --now blazecoind
+# Guide:    doc/install-linux.md
+#
+# Assumes: binaries in /usr/local/bin, a system user "blazecoin", data directory
+# /var/lib/blazecoin with blazecoin.conf inside it. Change the paths if yours differ.
+
+[Unit]
+Description=Blazecoin V2 daemon
+Documentation=https://github.com/AMA-CSharp-Code/blazecoin-core/blob/main/doc/install-linux.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=blazecoin
+Group=blazecoin
+ExecStart=/usr/local/bin/blazecoind -datadir=/var/lib/blazecoin
+Restart=on-failure
+RestartSec=30
+# The database needs a clean flush on stop. Never shorten this or use kill -9.
+TimeoutStopSec=600
+
+# Hardening
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateDevices=true
+ReadWritePaths=/var/lib/blazecoin
+
+[Install]
+WantedBy=multi-user.target
