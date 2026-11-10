@@ -217,6 +217,90 @@ blz getnetworkinfo | grep subversion
 
 The data, wallet and configuration carry over. The release notes say if a re-index is ever needed.
 
+## 12. Running a pool against your node
+
+Most pool problems are one of four things: **the node, RPC, the pool software, the network**. Check them
+in that order and the fault usually shows itself. (The `blz` alias is from step 7.)
+
+### 12.1 Is the node running and in sync?
+
+```bash
+sudo systemctl status blazecoind
+blz getblockchaininfo
+```
+
+`blocks` must equal `headers` and `initialblockdownload` must be `false`. While the node is still
+syncing, `getblocktemplate` refuses with "is in initial sync", and a node that is behind hands miners
+stale work. Compare the height with https://blazecoin.co.uk.
+
+### 12.2 Does it have peers?
+
+```bash
+blz getconnectioncount
+blz getpeerinfo | grep '"addr"'
+```
+
+You want 2 or more. With 0 peers, `getblocktemplate` refuses with "is not connected". Check that
+55414/tcp is open in `ufw` and in the VPS provider's firewall, then try
+`blz addnode 51.210.47.141:55414 onetry`.
+
+### 12.3 Can the pool reach RPC?
+
+From the machine the pool runs on, with the user and password the pool is configured with (the
+`rpcauth` line from step 8):
+
+```bash
+curl --user USER --data-binary '{"jsonrpc":"1.0","id":"t","method":"getblocktemplate","params":[{"rules":["segwit"]}]}' \
+     -H 'content-type: text/plain;' http://127.0.0.1:55413/
+```
+
+| Result | Meaning |
+|---|---|
+| a JSON block template (`"height"`, `"coinbasevalue"`, …) | RPC works. If the pool still fails, the fault is in the pool software or its config |
+| `401 Unauthorized` / empty reply | wrong user or password, or the `rpcauth` line was added without restarting the node |
+| `Connection refused` | node not running, or the pool is on another machine (RPC answers on 127.0.0.1 only; see step 8) |
+| `must be called with the segwit rule set` | the pool calls `getblocktemplate` without `"rules":["segwit"]`. This node needs the rule even though SegWit is not active on Blazecoin. Most pool software sends it already |
+| `is in initial sync` / `is not connected` | back to 12.1 / 12.2 |
+
+### 12.4 Read the logs, newest first
+
+```bash
+journalctl -u blazecoind -n 100 --no-pager
+tail -f /var/lib/blazecoin/debug.log
+```
+
+Then the pool's own log. Look for the **first** error: the ones after it usually follow from it.
+A submitted block shows up in `debug.log` as `UpdateTip: new best=…` (accepted) or with a
+reject reason (`high-hash`, `bad-txnmrklroot`, `bad-cb-amount`, …), which points at the pool's block
+building.
+
+### 12.5 Blocks found but no payouts
+
+- `blz -rpcwallet=<wallet> getbalances`: freshly mined coins show as `immature`. **A coinbase can be
+  spent after 30 confirmations** on Blazecoin (about 15 minutes at the 30-second target, longer when
+  the network is quiet). Pools that assume Bitcoin's 100 just pay later than they could.
+- The pool's payout and reward addresses must be **legacy `B…`**. A `blz1…` or wrapped-SegWit
+  (P2SH-segwit) address can never be spent here, and 2.1.3 refuses to make them.
+- Check that the wallet the pool pays from is loaded at start (`wallet=<name>` in `blazecoin.conf`).
+
+### 12.6 Miners connect and then drop
+
+This is nearly always the share difficulty. Set the stratum start difficulty for the hardware:
+higher for ASICs, lower for small or USB miners. Use vardiff if the pool supports it. Also check
+that the algorithm is set to **scrypt** in both the pool and the miner.
+
+### 12.7 Things that are normal on this chain
+
+- **Quiet periods.** Hashrate is low, so the gap between blocks varies a lot. A pause is not by itself
+  a fault: check 12.1 and 12.2, and if they pass, the node is fine.
+- **Difficulty moves every block** (the Phoenix-413 retarget since block 4,194,000). Big swings after
+  a large miner joins or leaves are expected.
+
+### 12.8 Keep a runbook
+
+Write down every fault you hit, what you saw and what fixed it. After a few weeks that list covers
+most of what goes wrong on your setup.
+
 ## Troubleshooting
 
 - **`status` shows `failed` straight away:** run `journalctl -u blazecoind -n 50`. The usual causes are
