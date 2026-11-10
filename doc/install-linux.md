@@ -329,6 +329,23 @@ that the algorithm is set to **scrypt** in both the pool and the miner.
 Write down every fault you hit, what you saw and what fixed it. After a few weeks that list covers
 most of what goes wrong on your setup.
 
+## 13. Setting up more nodes (checklist)
+
+Running nodes in several places, for example one per pool region? Each one takes the same steps:
+
+1. Install, create the `blazecoin` user and data directory, write the config, install the service
+   (steps 2–5).
+2. Optional quick start: copy `blocks/` and `chainstate/` from a **stopped** node, then
+   `sudo chown -R blazecoin:blazecoin /var/lib/blazecoin` (see step 7, "Starting from a copy of
+   another node's chain").
+3. Open 55414/tcp in `ufw` **and** in the provider's firewall. Keep 55413 closed (step 6).
+4. Generate an `rpcauth` line, add it to the config, then `sudo systemctl restart blazecoind` (step 8).
+5. Run the RPC test in 12.3 and check for `HTTP/1.1 200 OK`.
+6. Point that site's pool at `127.0.0.1:55413` with that node's RPC user and password.
+
+Give every node its **own RPC password**, so a leak on one machine does not open the others, and
+keep a note of which user and password belongs to which site.
+
 ## Troubleshooting
 
 - **`status` shows `failed` straight away:** run `journalctl -u blazecoind -n 50`. The usual causes are
