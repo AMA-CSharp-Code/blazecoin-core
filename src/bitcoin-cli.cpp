@@ -484,9 +484,10 @@ public:
         if (!batch[ID_NETWORKINFO]["error"].isNull()) return batch[ID_NETWORKINFO];
 
         const UniValue& networkinfo{batch[ID_NETWORKINFO]["result"]};
-        if (networkinfo["version"].getInt<int>() < 209900) {
-            throw std::runtime_error("-netinfo requires bitcoind server to be running v0.21.0 and up");
-        }
+        // Blazecoin: upstream refuses here a server whose "version" is below 209900 (Bitcoin Core 0.21, the first to
+        // report everything this dashboard reads). That number is upstream's client version; this fork reports its
+        // own - 20102 for 2.1.2 - so -netinfo refused every Blazecoin node (audit 2026-11-09, the same mistake as the
+        // fee_estimates.dat format check). Every V2 node is built on Core 28 and has the fields, so nothing is checked.
         const int64_t time_now{TicksSinceEpoch<std::chrono::seconds>(CliClock::now())};
 
         // Count peer connection totals, and if DetailsRequested(), store peer data in a vector of structs.

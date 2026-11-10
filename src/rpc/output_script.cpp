@@ -9,12 +9,16 @@
 #include <rpc/protocol.h>
 #include <rpc/request.h>
 #include <rpc/server.h>
+#include <rpc/server_util.h>
 #include <rpc/util.h>
 #include <script/descriptor.h>
 #include <script/script.h>
 #include <script/signingprovider.h>
 #include <tinyformat.h>
 #include <univalue.h>
+#include <deploymentstatus.h>
+#include <sync.h>
+#include <validation.h>
 #include <util/check.h>
 #include <util/strencodings.h>
 
@@ -140,6 +144,16 @@ static RPCHelpMan createmultisig()
                     throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "createmultisig cannot create bech32m multisig addresses");
                 } else if (parsed.value() == OutputType::PQ) {
                     throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "createmultisig cannot create pq (post-quantum) addresses: P2PQH is a single-key output");
+                }
+                // Blazecoin: a witness multisig (bech32, or p2sh-segwit - which looks like any other P2SH address)
+                // can never be spent from while SegWit is not active; coins sent to it would be lost
+                // (bug-bounty report 2026-11-09).
+                if (IsWitnessOutputType(parsed.value())) {
+                    ChainstateManager& chainman = EnsureAnyChainman(request.context);
+                    const bool segwit_active{WITH_LOCK(::cs_main, return DeploymentActiveAfter(chainman.ActiveChain().Tip(), chainman, Consensus::DEPLOYMENT_SEGWIT))};
+                    if (!segwit_active) {
+                        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("createmultisig cannot create %s addresses on this chain: SegWit is not active, so coins sent to one could never be spent. Use \"legacy\".", request.params[2].get_str()));
+                    }
                 }
                 output_type = parsed.value();
             }

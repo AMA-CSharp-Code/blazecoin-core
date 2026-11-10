@@ -220,6 +220,18 @@ struct CreatedTransactionResult
  */
 util::Result<CreatedTransactionResult> CreateTransaction(CWallet& wallet, const std::vector<CRecipient>& vecSend, std::optional<unsigned int> change_pos, const CCoinControl& coin_control, bool sign = true);
 
+/** Blazecoin: why this wallet will not create an output paying `script` right now - or nothing, when it may.
+ *  Refused: a post-quantum output before its activation height, and anything whose spend needs witness data while
+ *  SegWit is not active (a witness program, or one of the wallet's own P2SH-wrapped ones).
+ *  ONE rule for every way a wallet transaction gets an output - a recipient, a change address given by hand, and each
+ *  of sendall's outputs. Bug-bounty reports 2026-11-09: only recipients were checked; sendall and change_address built
+ *  a transaction the mempool refused, returned its txid, and left the coins marked spent until it was abandoned. */
+std::optional<bilingual_str> OutputRefusal(const CWallet& wallet, const CScript& script) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
+
+/** Blazecoin: why a coin paying `script` cannot be spent right now (the words that follow "this input ...") - or
+ *  nothing. The same two cases as OutputRefusal, seen from the spending side. */
+std::optional<std::string> InputRefusal(const CWallet& wallet, const CScript& script) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
+
 /**
  * Insert additional inputs into the transaction by
  * calling CreateTransaction();

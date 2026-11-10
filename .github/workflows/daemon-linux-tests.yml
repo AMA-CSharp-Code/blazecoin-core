@@ -60,7 +60,9 @@ jobs:
           for f in 'pow_tests/blazecoin_*' \
                    'pow_tests/scrypt_pow_distinct_from_identity' \
                    'validation_tests/blazecoin_*' \
-                   'key_tests/blazecoin_import_short_form_der'; do
+                   'key_tests/blazecoin_import_short_form_der' \
+                   'disconnected_transactions' \
+                   'policyestimator_tests/blazecoin_*'; do
             echo "== $f =="
             "${{ steps.bins.outputs.testbin }}" --run_test="$f"
           done

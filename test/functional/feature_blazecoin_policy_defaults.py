@@ -77,6 +77,18 @@ class BlazecoinPolicyDefaultsTest(BitcoinTestFramework):
         assert_equal(result["allowed"], True)
         assert_equal(result["fees"]["base"], Decimal(0))  # exactly zero fee, still relayable
 
+        # 4) The node reads back the fee estimates it saved at shutdown (bug-bounty report 2026-11-09: the file's
+        #    format number, 149900, was compared with this fork's client version, 20102, so every start refused the
+        #    node's own fee_estimates.dat as "up-version" and began with an empty estimator).
+        with node.assert_debug_log(expected_msgs=[], unexpected_msgs=["up-version", "Failed to read fee estimates"]):
+            self.restart_node(0)
+
+        # 5) blazecoin-cli -netinfo answers (audit 2026-11-09: the cli refused any server whose version number is
+        #    below 209900 - upstream's 0.21 - and this fork reports 20102 for 2.1.2, so -netinfo never worked here).
+        if self.is_cli_compiled():
+            netinfo = node.cli('-netinfo').send_cli()
+            assert " - server " in netinfo and "Local addresses" in netinfo, netinfo
+
         self.log.info("Blazecoin policy defaults verified: incrementalrelayfee/minrelaytxfee/relayfee all 0, "
                       "legacy default address, 0-fee relay accepted with no conf (D3 fixed in-binary).")
 

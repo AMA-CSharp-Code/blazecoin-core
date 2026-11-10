@@ -957,11 +957,14 @@ void CBlockPolicyEstimator::FlushFeeEstimates()
     }
 }
 
+/** Blazecoin: the format number written at the head of fee_estimates.dat, and the newest one Read() accepts. */
+static constexpr int FEE_ESTIMATES_FORMAT{149900};
+
 bool CBlockPolicyEstimator::Write(AutoFile& fileout) const
 {
     try {
         LOCK(m_cs_fee_estimator);
-        fileout << 149900; // version required to read: 0.14.99 or later
+        fileout << FEE_ESTIMATES_FORMAT; // the file format (upstream: "version required to read: 0.14.99 or later")
         fileout << CLIENT_VERSION; // version that wrote the file
         fileout << nBestSeenHeight;
         if (BlockSpan() > HistoricalBlockSpan()/2) {
@@ -988,7 +991,11 @@ bool CBlockPolicyEstimator::Read(AutoFile& filein)
         LOCK(m_cs_fee_estimator);
         int nVersionRequired, nVersionThatWrote;
         filein >> nVersionRequired >> nVersionThatWrote;
-        if (nVersionRequired > CLIENT_VERSION) {
+        // Blazecoin: compared with the FORMAT this code reads, not with CLIENT_VERSION. Upstream writes 149900 and
+        // checks it against its own client version (280000 or so); this fork's client version is 2.1.2 = 20102, so
+        // the node refused every fee_estimates.dat it had written itself and started each run with an empty
+        // estimator (bug-bounty report 2026-11-09).
+        if (nVersionRequired > FEE_ESTIMATES_FORMAT) {
             throw std::runtime_error(strprintf("up-version (%d) fee estimate file", nVersionRequired));
         }
 
@@ -997,7 +1004,7 @@ bool CBlockPolicyEstimator::Read(AutoFile& filein)
         unsigned int nFileBestSeenHeight;
         filein >> nFileBestSeenHeight;
 
-        if (nVersionRequired < 149900) {
+        if (nVersionRequired < FEE_ESTIMATES_FORMAT) {
             LogPrintf("%s: incompatible old fee estimation data (non-fatal). Version: %d\n", __func__, nVersionRequired);
         } else { // New format introduced in 149900
             unsigned int nFileHistoricalFirst, nFileHistoricalBest;

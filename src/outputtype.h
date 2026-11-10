@@ -23,6 +23,14 @@ enum class OutputType {
     UNKNOWN,
 };
 
+/** Blazecoin: the output types whose spend needs witness data - bech32, bech32m and the P2SH-wrapped form. One list
+ *  for the wallet (CWallet::IsWitnessOutputType) and the node RPCs (createmultisig): it was written out in both, and
+ *  the wrapped form was first missed in one of them (audit 2026-11-09). A new witness type is added HERE. */
+constexpr bool IsWitnessOutputType(OutputType type)
+{
+    return type == OutputType::BECH32 || type == OutputType::BECH32M || type == OutputType::P2SH_SEGWIT;
+}
+
 static constexpr auto OUTPUT_TYPES = std::array{
     OutputType::LEGACY,
     OutputType::P2SH_SEGWIT,

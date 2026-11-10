@@ -2288,7 +2288,8 @@ const char* CWallet::SegwitUnavailableMessage()
     // Bug-bounty report 2026-11-06: an explicit bech32 request got a working address, a send to it confirmed, and the
     // coins were gone - SegWit never activates here, so nothing can spend a witness output. -changetype=bech32 did the
     // same to every send's change. The default type (legacy) was guarded; the explicit requests were not.
-    return "bech32/bech32m (SegWit) addresses cannot be used on this chain: SegWit is not active, so coins sent to one could never be spent. Use a legacy B... or a post-quantum BQ... address.";
+    // 2026-11-09: the same goes for p2sh-segwit, a witness program behind an ordinary-looking P2SH address.
+    return "bech32/bech32m and p2sh-segwit (SegWit) addresses cannot be used on this chain: SegWit is not active, so coins sent to one could never be spent. Use a legacy B... or a post-quantum BQ... address.";
 }
 
 bool CWallet::IsPQSigActiveForNextBlock() const
@@ -2301,6 +2302,7 @@ bool CWallet::IsPQSigActiveForNextBlock() const
 
 OutputType CWallet::TransactionChangeType(const std::optional<OutputType>& change_type, const std::vector<CRecipient>& vecSend) const
 {
+    AssertLockHeld(cs_wallet);
     // If -changetype is specified, always use that change type.
     if (change_type) {
         return *change_type;
@@ -2326,6 +2328,17 @@ OutputType CWallet::TransactionChangeType(const std::optional<OutputType>& chang
         } else if (std::get_if<PKHash>(&recipient.dest)) {
             any_pkh = true;
         }
+    }
+
+    // Blazecoin: while SegWit is not active no witness type may be CHOSEN for change. Upstream's rules below answer
+    // a P2SH recipient with p2sh-segwit change and fall through to bech32m / bech32 for anything they do not know
+    // (a post-quantum recipient, for one). With a non-legacy default address type that sent change to an address
+    // nothing can spend (2.1.2, p2sh-segwit), or - once that was guarded - refused the payment over its own change
+    // (bug-bounty reports 2026-11-09). Change is legacy unless the default type is a usable non-witness one (pq).
+    if (!IsSegwitActiveForNextBlock()) {
+        if (any_pkh || IsWitnessOutputType(m_default_address_type)) return OutputType::LEGACY;
+        if (m_default_address_type == OutputType::PQ && !IsPQSigActiveForNextBlock()) return OutputType::LEGACY;
+        return m_default_address_type;
     }
 
     const bool has_bech32m_spkman(GetScriptPubKeyMan(OutputType::BECH32M, /*internal=*/true));
@@ -2602,7 +2615,7 @@ bool CWallet::TopUpKeyPool(unsigned int kpSize)
 util::Result<CTxDestination> CWallet::GetNewDestination(const OutputType type, const std::string label)
 {
     LOCK(cs_wallet);
-    if (IsWitnessOutputType(type) && !IsSegwitActiveForNextBlock()) {
+    if (IsWitnessTypeUnusable(type)) {
         return util::Error{Untranslated(SegwitUnavailableMessage())};
     }
     auto spk_man = GetScriptPubKeyMan(type, /*internal=*/false);
@@ -2626,7 +2639,7 @@ util::Result<CTxDestination> CWallet::GetNewDestination(const OutputType type, c
 util::Result<CTxDestination> CWallet::GetNewChangeDestination(const OutputType type)
 {
     LOCK(cs_wallet);
-    if (IsWitnessOutputType(type) && !IsSegwitActiveForNextBlock()) {
+    if (IsWitnessTypeUnusable(type)) {
         return util::Error{Untranslated(SegwitUnavailableMessage())};
     }
 
@@ -3139,6 +3152,10 @@ std::shared_ptr<CWallet> CWallet::Create(WalletContext& context, const std::stri
             error = strprintf(_("Unknown address type '%s'"), args.GetArg("-addresstype", ""));
             return nullptr;
         }
+        // Blazecoin: at start-up the wallet has processed no block yet, so this asks the chain's parameters ("can
+        // SegWit EVER be active here?") where the run-time checks ask the wallet's height (IsWitnessTypeUnusable).
+        // On mainnet the two agree. On a test chain with a finite SegWit height the option is accepted here and the
+        // run-time checks do the refusing until that height - deliberate, and the same for -changetype below.
         if (IsWitnessOutputType(parsed.value()) && Params().GetConsensus().SegwitHeight == Consensus::BLAZECOIN_BIP_NEVER_ACTIVE) {
             error = Untranslated(std::string("-addresstype: ") + SegwitUnavailableMessage());
             return nullptr;

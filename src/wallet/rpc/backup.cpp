@@ -1472,6 +1472,13 @@ static UniValue ProcessDescriptorImport(CWallet& wallet, const UniValue& data, c
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, error);
         }
 
+        // Blazecoin: a witness descriptor (wpkh, wsh, tr, or either wrapped in sh) can be imported - to see what is
+        // on its addresses - but nothing on them can be spent while SegWit is not active, and the wallet will neither
+        // hand those addresses out nor pay them. Say so (bug-bounty report 2026-11-09: the import was silent).
+        if (const auto type{parsed_desc->GetOutputType()}; type && wallet.IsWitnessTypeUnusable(*type)) {
+            warnings.push_back("This is a SegWit descriptor, and SegWit is not active on this chain: coins paid to its addresses cannot be spent. The wallet will not give out or pay these addresses.");
+        }
+
         // Blazecoin: BIP65 (CLTV), BIP68/112 (sequence locks, CSV) and BIP113 are never active on this chain
         // (BLAZECOIN_V2.md), so a timelock in a script is a no-op in a block - the mempool refuses an early spend,
         // a miner can confirm it. A descriptor that leans on one imported without a word (bug-bounty report

@@ -643,7 +643,7 @@ public:
     bool ShouldResend() const;
     void ResubmitWalletTransactions(bool relay, bool force);
 
-    OutputType TransactionChangeType(const std::optional<OutputType>& change_type, const std::vector<CRecipient>& vecSend) const;
+    OutputType TransactionChangeType(const std::optional<OutputType>& change_type, const std::vector<CRecipient>& vecSend) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
     /** Fetch the inputs and sign with SIGHASH_ALL. */
     bool SignTransaction(CMutableTransaction& tx) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
@@ -659,8 +659,15 @@ public:
     int SegwitActivationHeight() const;
     /** True once SegWit is active for the next block - the only time a witness address or output is any use. */
     bool IsSegwitActiveForNextBlock() const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
-    /** bech32 / bech32m: the output types that are witness programs. */
-    static bool IsWitnessOutputType(OutputType type) { return type == OutputType::BECH32 || type == OutputType::BECH32M; }
+    /** The output types whose coins need witness data to spend: bech32 / bech32m (witness programs) and p2sh-segwit
+     *  (a witness program behind a P2SH address). The last was left out on 2026-11-06, so the wallet went on making
+     *  and funding P2SH-wrapped witness addresses whose coins it could never spend (bug-bounty report 2026-11-09). */
+    static bool IsWitnessOutputType(OutputType type) { return ::IsWitnessOutputType(type); }
+    /** Blazecoin: true when an address of this type must not be made, handed out or used for change right now - a
+     *  witness type while SegWit is not active. The ONE test behind getnewaddress, getrawchangeaddress, the change
+     *  type of a send, addmultisigaddress and the importdescriptors warning (audit 2026-11-09: it was written out
+     *  at each of them). The words for the refusal are SegwitUnavailableMessage(). */
+    bool IsWitnessTypeUnusable(OutputType type) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet) { return IsWitnessOutputType(type) && !IsSegwitActiveForNextBlock(); }
     /** The words every refusal of a witness address or output uses on this chain. */
     static const char* SegwitUnavailableMessage();
     /** Blazecoin: whether DEPLOYMENT_PQSIG is active for the block after the wallet's last processed block -

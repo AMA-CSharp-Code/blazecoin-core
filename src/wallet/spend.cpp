@@ -71,6 +71,50 @@ static bool IsWitnessOutput(const CScript& script)
     return script.IsWitnessProgram(version, program);
 }
 
+/** Blazecoin: an output whose spend needs witness data - a witness program, or a P2SH output whose redeem script
+ *  this wallet knows to be one (p2sh-segwit). On the wire a wrapped witness address is just another P2SH address, so
+ *  only the wallet that holds the redeem script can tell; the 2026-11-06 guard looked at witness programs alone and
+ *  the wrapped form stayed spendable on paper (bug-bounty report 2026-11-09). */
+static bool NeedsWitnessToSpend(const CWallet& wallet, const CScript& script)
+{
+    if (IsWitnessOutput(script)) return true;
+    if (!script.IsPayToScriptHash()) return false;
+    const std::unique_ptr<SigningProvider> provider = wallet.GetSolvingProvider(script);
+    if (!provider) return false;
+    // OP_HASH160 <20-byte script hash> OP_EQUAL
+    CScript redeem_script;
+    const CScriptID script_id{uint160{std::vector<unsigned char>(script.begin() + 2, script.begin() + 22)}};
+    return provider->GetCScript(script_id, redeem_script) && IsWitnessOutput(redeem_script);
+}
+
+std::optional<bilingual_str> OutputRefusal(const CWallet& wallet, const CScript& script)
+{
+    AssertLockHeld(wallet.cs_wallet);
+    // A P2PQH output is non-standard until DEPLOYMENT_PQSIG is active: the mempool would reject the transaction.
+    if (pq::IsPayToPQKeyHash(script) && !wallet.IsPQSigActiveForNextBlock()) {
+        return strprintf(_("post-quantum outputs are not standard until block %d"), wallet.PQSigActivationHeight());
+    }
+    // A witness output could never be spent (bug-bounty report 2026-11-06: the wallet paid one and the coins were
+    // gone) - including one of this wallet's OWN p2sh-segwit addresses, made by a version before 2026-11-09: to
+    // everyone else that is an ordinary P2SH address, so this is the only place the payment can be stopped.
+    if (NeedsWitnessToSpend(wallet, script) && !wallet.IsSegwitActiveForNextBlock()) {
+        return Untranslated(CWallet::SegwitUnavailableMessage());
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> InputRefusal(const CWallet& wallet, const CScript& script)
+{
+    AssertLockHeld(wallet.cs_wallet);
+    if (pq::IsPayToPQKeyHash(script) && !wallet.IsPQSigActiveForNextBlock()) {
+        return strprintf("is a post-quantum output, which cannot be spent until block %d", wallet.PQSigActivationHeight());
+    }
+    if (NeedsWitnessToSpend(wallet, script) && !wallet.IsSegwitActiveForNextBlock()) {
+        return std::string{"is a SegWit (bech32 or p2sh-segwit) output, which cannot be spent on this chain - SegWit is not active"};
+    }
+    return std::nullopt;
+}
+
 static std::optional<int64_t> MaxInputWeight(const Descriptor& desc, const std::optional<CTxIn>& txin,
                                              const CCoinControl* coin_control, const bool tx_is_segwit,
                                              const bool can_grind_r) {
@@ -312,14 +356,13 @@ util::Result<PreSelectedInputs> FetchSelectedInputs(const CWallet& wallet, const
             return util::Error{strprintf(_("Not solvable pre-selected input %s"), outpoint.ToString())}; // Not solvable, can't estimate size for fee
         }
 
-        // Blazecoin: a P2PQH coin is unspendable (and its spend non-standard) until DEPLOYMENT_PQSIG is active.
-        if (pq::IsPayToPQKeyHash(txout.scriptPubKey) && !wallet.IsPQSigActiveForNextBlock()) {
-            return util::Error{strprintf(_("Pre-selected input %s is a post-quantum output, which cannot be spent until block %d"), outpoint.ToString(), wallet.PQSigActivationHeight())};
-        }
-        // Blazecoin: a witness output has no spend path while SegWit is not active (never, on mainnet); a spend of one
-        // is refused by the mempool and would otherwise sit in the wallet unbroadcast (bug-bounty report 2026-11-06).
-        if (IsWitnessOutput(txout.scriptPubKey) && !wallet.IsSegwitActiveForNextBlock()) {
-            return util::Error{strprintf(_("Pre-selected input %s is a SegWit (bech32) output, which cannot be spent on this chain - SegWit is not active"), outpoint.ToString())};
+        // Blazecoin: a P2PQH coin is unspendable (and its spend non-standard) until DEPLOYMENT_PQSIG is active, and a
+        // witness output has no spend path while SegWit is not active (never, on mainnet); a spend of either is
+        // refused by the mempool and would otherwise sit in the wallet unbroadcast (bug-bounty report 2026-11-06).
+        // The rule is InputRefusal's, not a copy of it (audit 2026-11-09: it was written out here, in AvailableCoins
+        // and in InputRefusal - three places to change for the next case, which is how p2sh-segwit was missed).
+        if (const auto refusal{InputRefusal(wallet, txout.scriptPubKey)}) {
+            return util::Error{Untranslated(strprintf("Pre-selected input %s %s", outpoint.ToString(), *refusal))};
         }
 
         /* Set some defaults for depth, spendable, solvable, safe, time, and from_me as these don't matter for preset inputs since no selection is being done. */
@@ -345,8 +388,6 @@ CoinsResult AvailableCoins(const CWallet& wallet,
     const int max_depth = {coinControl ? coinControl->m_max_depth : DEFAULT_MAX_DEPTH};
     const bool only_safe = {coinControl ? !coinControl->m_include_unsafe_inputs : true};
     const bool can_grind_r = wallet.CanGrindR();
-    // Blazecoin: P2PQH coins are unspendable until DEPLOYMENT_PQSIG is active for the next block.
-    const bool pqsig_active = wallet.IsPQSigActiveForNextBlock();
     std::vector<COutPoint> outpoints;
 
     std::set<uint256> trusted_parents;
@@ -444,12 +485,10 @@ CoinsResult AvailableCoins(const CWallet& wallet,
             // it is safe to assume that this input is solvable if input_bytes is greater than -1.
             bool solvable = input_bytes > -1;
             bool spendable = ((mine & ISMINE_SPENDABLE) != ISMINE_NO) || (((mine & ISMINE_WATCH_ONLY) != ISMINE_NO) && (coinControl && coinControl->fAllowWatchOnly && solvable));
-            if (!pqsig_active && pq::IsPayToPQKeyHash(output.scriptPubKey)) {
-                // Blazecoin: listed (listunspent shows spendable=false) but never selected before H_Q.
-                spendable = false;
-            }
-            if (IsWitnessOutput(output.scriptPubKey) && !wallet.IsSegwitActiveForNextBlock()) {
-                // Blazecoin: a witness coin cannot be spent while SegWit is not active - listed, never selected.
+            if (InputRefusal(wallet, output.scriptPubKey)) {
+                // Blazecoin: a P2PQH coin before H_Q, or a witness coin (wrapped in P2SH or not) while SegWit is not
+                // active, cannot be spent - listed (listunspent shows spendable=false), never selected. The same
+                // rule as a pre-selected input and sendall's named inputs: InputRefusal (audit 2026-11-09).
                 spendable = false;
             }
 
@@ -1075,9 +1114,10 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     }
     // Blazecoin: change to a witness address would be lost for good (bug-bounty report 2026-11-06: -changetype=bech32
     // sent every send's change to an address nothing can spend from, and the spend of it then stalled mining).
-    const bool segwit_active = wallet.IsSegwitActiveForNextBlock();
-    if (!segwit_active && CWallet::IsWitnessOutputType(change_type)) {
-        return util::Error{Untranslated(std::string("change type ") + FormatOutputType(change_type) + ": " + CWallet::SegwitUnavailableMessage())};
+    if (wallet.IsWitnessTypeUnusable(change_type)) {
+        // (Worded for a change TYPE: the address advice of SegwitUnavailableMessage read as "use a BQ address" to
+        // someone who had just paid one - bug-bounty report 2026-11-09.)
+        return util::Error{Untranslated(std::string("change type ") + FormatOutputType(change_type) + " cannot be used on this chain: SegWit is not active, so the change could never be spent. Use change type legacy (or pq).")};
     }
     ReserveDestination reservedest(&wallet, change_type);
     unsigned int outputs_to_subtract_fee_from = 0; // The number of outputs which we are subtracting the fee from
@@ -1085,11 +1125,8 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
         if (IsDust(recipient, wallet.chain().relayDustFee())) {
             return util::Error{_("Transaction amount too small")};
         }
-        if (!pqsig_active && std::holds_alternative<PQKeyHash>(recipient.dest)) {
-            return util::Error{strprintf(_("post-quantum outputs are not standard until block %d"), wallet.PQSigActivationHeight())};
-        }
-        if (!segwit_active && IsWitnessOutput(GetScriptForDestination(recipient.dest))) {
-            return util::Error{Untranslated(CWallet::SegwitUnavailableMessage())};
+        if (const auto refusal{OutputRefusal(wallet, GetScriptForDestination(recipient.dest))}) {
+            return util::Error{*refusal};
         }
 
         // Include the fee cost for outputs.
@@ -1131,6 +1168,15 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
         // vice-versa). An empty change script will abort later, if the
         // change keypool ran out, but change is required.
         CHECK_NONFATAL(IsValidDestination(dest) != scriptChange.empty());
+    }
+    // Blazecoin: the change output - an address given by hand OR one the wallet just made - is an output like any
+    // other and goes through the one output rule (bug-bounty report 2026-11-09: a change TYPE was checked, a change
+    // ADDRESS was used as given - bech32 change, a transaction the mempool refused, and a txid handed back as if it
+    // had been sent. Audit 2026-11-09: the generated script relied on the type checks above alone).
+    if (!scriptChange.empty()) {
+        if (const auto refusal{OutputRefusal(wallet, scriptChange)}) {
+            return util::Error{Untranslated("change address: ") + *refusal};
+        }
     }
     CTxOut change_prototype_txout(0, scriptChange);
     coin_selection_params.change_output_size = GetSerializeSize(change_prototype_txout);

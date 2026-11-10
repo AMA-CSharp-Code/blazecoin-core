@@ -12,6 +12,9 @@
   <ItemGroup>
     <ClCompile Include="..\..\src\test\*_properties.cpp" />
     <ClCompile Include="..\..\src\test\*_tests.cpp" Exclude="..\..\src\test\ipc_tests.cpp" />
+    <!-- Blazecoin: the one test source whose name the *_tests.cpp wildcard misses. It was never built on
+         Windows, so its upstream 100-block assumption went unnoticed (bug-bounty report 2026-11-09). -->
+    <ClCompile Include="..\..\src\test\disconnected_transactions.cpp" />
     <ClCompile Include="..\..\src\test\gen\*_gen.cpp" />
     <ClCompile Include="..\..\src\test\main.cpp" />
     <ClCompile Include="..\..\src\test\util\*.cpp" />

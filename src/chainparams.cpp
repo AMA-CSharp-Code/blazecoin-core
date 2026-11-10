@@ -59,6 +59,13 @@ void ReadRegTestArgs(const ArgsManager& args, CChainParams::RegTestOptions& opti
 
         const auto deployment_name{arg.substr(0, found)};
         if (const auto buried_deployment = GetBuriedDeployment(deployment_name)) {
+            // Phoenix-413 anchors on the block AT its activation height and reads the time of
+            // that block's PARENT (pow.cpp, Phoenix413NextWorkRequired). At height 0 the anchor
+            // is the genesis block, which has none: the node accepted the option and then
+            // aborted on the first block it tried to mine (bug-bounty report 2026-11-09).
+            if (*buried_deployment == Consensus::BuriedDeployment::DEPLOYMENT_PHOENIX413 && height < 1) {
+                throw std::runtime_error(strprintf("Invalid height value (%s) for -testactivationheight=name@height: phoenix413 needs a height of at least 1 (its anchor block must have a parent).", arg));
+            }
             options.activation_heights[*buried_deployment] = height;
         } else {
             throw std::runtime_error(strprintf("Invalid name (%s) for -testactivationheight=name@height.", arg));

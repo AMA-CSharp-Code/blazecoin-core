@@ -288,6 +288,13 @@ RPCHelpMan addmultisigaddress()
         }
         output_type = parsed.value();
     }
+    // Blazecoin: a witness multisig (bech32, or p2sh-segwit - which looks like any other P2SH address) can never be
+    // spent from while SegWit is not active, so coins sent to it would be lost. createmultisig refuses to make one
+    // (bug-bounty report 2026-11-09); this, its wallet twin, still made one and stored it - asked for by name, or
+    // through a witness default address type (audit 2026-11-09). Same rule and words as getnewaddress.
+    if (pwallet->IsWitnessTypeUnusable(output_type)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, CWallet::SegwitUnavailableMessage());
+    }
 
     // Construct multisig scripts
     FlatSigningProvider provider;

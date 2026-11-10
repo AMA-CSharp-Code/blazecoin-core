@@ -5,9 +5,11 @@
 #include <policy/fees.h>
 #include <policy/fees_args.h>
 #include <policy/policy.h>
+#include <streams.h>
 #include <test/util/txmempool.h>
 #include <txmempool.h>
 #include <uint256.h>
+#include <util/fs.h>
 #include <util/time.h>
 #include <validationinterface.h>
 
@@ -263,6 +265,24 @@ BOOST_AUTO_TEST_CASE(BlockPolicyEstimates)
     for (int i = 2; i < 9; i++) { // At 9, the original estimate was already at the bottom (b/c scale = 2)
         BOOST_CHECK(feeEst.estimateFee(i).GetFeePerK() < origFeeEst[i-1] - deltaFee);
     }
+}
+
+// Blazecoin: the estimator reads back the file it writes (bug-bounty report 2026-11-09). The format number at the
+// head of fee_estimates.dat was compared with CLIENT_VERSION - 20102 here, against upstream's 149900 - so Read()
+// refused every file Write() had produced and each start began with an empty estimator.
+BOOST_AUTO_TEST_CASE(blazecoin_fee_estimates_file_reads_back)
+{
+    CBlockPolicyEstimator fee_est{FeeestPath(*m_node.args), DEFAULT_ACCEPT_STALE_FEE_ESTIMATES};
+    const fs::path path{m_args.GetDataDirBase() / "fee_estimates_roundtrip.dat"};
+    {
+        AutoFile out{fsbridge::fopen(path, "wb")};
+        BOOST_REQUIRE(!out.IsNull());
+        BOOST_REQUIRE(fee_est.Write(out));
+        BOOST_REQUIRE_EQUAL(out.fclose(), 0);
+    }
+    AutoFile in{fsbridge::fopen(path, "rb")};
+    BOOST_REQUIRE(!in.IsNull());
+    BOOST_CHECK(fee_est.Read(in));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

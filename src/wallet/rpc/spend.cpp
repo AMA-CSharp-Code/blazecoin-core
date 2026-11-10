@@ -1458,6 +1458,17 @@ RPCHelpMan sendall()
             CMutableTransaction rawTx{ConstructTransaction(options["inputs"], recipient_key_value_pairs, options["locktime"], rbf)};
             LOCK(pwallet->cs_wallet);
 
+            // Blazecoin: sendall builds its transaction here, not through CreateTransaction, so none of the wallet's
+            // output checks applied to it (bug-bounty report 2026-11-09): to a bech32 address, or a post-quantum one
+            // before its height, it returned a txid for a transaction the mempool then refused, and the whole balance
+            // read as spent until the transaction was abandoned by hand. Same rule as every other send, before
+            // anything is built.
+            for (const CTxOut& out : rawTx.vout) {
+                if (const auto refusal{OutputRefusal(*pwallet, out.scriptPubKey)}) {
+                    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, refusal->original);
+                }
+            }
+
             CAmount total_input_value(0);
             bool send_max{options.exists("send_max") ? options["send_max"].get_bool() : false};
             if (options.exists("inputs") && options.exists("send_max")) {
@@ -1472,6 +1483,10 @@ RPCHelpMan sendall()
                     const CWalletTx* tx{pwallet->GetWalletTx(input.prevout.hash)};
                     if (!tx || input.prevout.n >= tx->tx->vout.size() || !(pwallet->IsMine(tx->tx->vout[input.prevout.n]) & (coin_control.fAllowWatchOnly ? ISMINE_ALL : ISMINE_SPENDABLE))) {
                         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Input not found. UTXO (%s:%d) is not part of wallet.", input.prevout.hash.ToString(), input.prevout.n));
+                    }
+                    // Blazecoin: ...nor is a coin that cannot be spent yet any more spendable for being named.
+                    if (const auto refusal{InputRefusal(*pwallet, tx->tx->vout[input.prevout.n].scriptPubKey)}) {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Input not available. UTXO (%s:%d) %s.", input.prevout.hash.ToString(), input.prevout.n, *refusal));
                     }
                     total_input_value += tx->tx->vout[input.prevout.n].nValue;
                 }

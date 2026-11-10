@@ -149,6 +149,22 @@ class BlazecoinPhoenix413Test(BitcoinTestFramework):
 
         self.log.info("Phoenix-413 regtest activation: all live targets bit-exact vs the reference mirror")
 
+        self.log.info("Activation at height 0 is refused at start-up (the anchor block needs a parent)")
+        # Bug-bounty report 2026-11-09: phoenix413@0 was accepted, and the node then aborted on
+        # an assert in Phoenix413NextWorkRequired the first time it built a block.
+        self.stop_node(0)
+        node.assert_start_raises_init_error(
+            extra_args=["-testactivationheight=phoenix413@0"],
+            expected_msg="Error: Invalid height value (phoenix413@0) for -testactivationheight=name@height: "
+                         "phoenix413 needs a height of at least 1 (its anchor block must have a parent).",
+        )
+
+        self.log.info("Activation at height 1 (anchor = block 1, parent = genesis) starts and mines")
+        self.restart_node(0, extra_args=["-testactivationheight=phoenix413@1"])
+        before = node.getblockcount()
+        self.generatetoaddress(node, 2, addr)
+        assert_equal(node.getblockcount(), before + 2)
+
 
 if __name__ == '__main__':
     BlazecoinPhoenix413Test(__file__).main()
