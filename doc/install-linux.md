@@ -151,6 +151,30 @@ journalctl -u blazecoind -f  # live log (Ctrl+C to leave)
 A first sync from nothing takes a few hours. It is finished when `blocks` equals `headers` and
 `initialblockdownload` is `false`. Compare the height with https://blazecoin.co.uk.
 
+### Starting from a copy of another node's chain (optional)
+
+If you already have a synced Blazecoin V2 node, you can copy its chain to skip most of the sync.
+
+1. **Stop the node you are copying from** and let it finish shutting down. A copy taken from a
+   running node can come out inconsistent, and the new node then re-indexes or refuses to start.
+2. Stop this node: `sudo systemctl stop blazecoind`.
+3. Copy only the **`blocks/`** and **`chainstate/`** folders into `/var/lib/blazecoin/`, replacing
+   the ones there. Do not copy `wallets/`, `.cookie` or `blazecoin.conf` from the other node.
+4. **Give the files to the service user.** Copied files belong to whoever copied them, and the
+   daemon runs as `blazecoin`, so it cannot open them:
+
+   ```bash
+   sudo chown -R blazecoin:blazecoin /var/lib/blazecoin
+   ```
+
+5. Start it with `sudo systemctl start blazecoind` and check with `blz getblockchaininfo`. It
+   should begin close to the other node's height and only fetch the blocks since.
+
+If you skip step 4, the node stops at start-up with
+`IO error: /var/lib/blazecoin/blocks/index/LOCK: Permission denied`. The fix is the `chown` above,
+not deleting the `LOCK` files: the node makes new ones each time it starts. Only delete a `LOCK`
+file while the daemon is stopped.
+
 ## 8. RPC for a pool or other software (optional)
 
 On the same machine, the simplest way is the cookie file: `/var/lib/blazecoin/.cookie` holds
@@ -306,6 +330,9 @@ most of what goes wrong on your setup.
 - **`status` shows `failed` straight away:** run `journalctl -u blazecoind -n 50`. The usual causes are
   a typo in `blazecoin.conf`, or data directory files owned by root because the node was once started
   with `sudo blazecoind`. To fix the owner: `sudo chown -R blazecoin:blazecoin /var/lib/blazecoin`.
+- **`IO error: .../blocks/index/LOCK: Permission denied`:** the chain folders were copied in from
+  elsewhere and still belong to the user who copied them. Run the same `chown` (see step 7,
+  "Starting from a copy of another node's chain").
 - **`Could not locate RPC credentials`:** you ran `blazecoin-cli` as yourself. Use the `blz` alias
   from step 7 (it runs as `blazecoin` with the right `-datadir`).
 - **No peers:** check that outbound 55414 is allowed, then try
