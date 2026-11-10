@@ -182,20 +182,24 @@ On the same machine, the simplest way is the cookie file: `/var/lib/blazecoin/.c
 (`sudo usermod -aG blazecoin <user>`) so it can read it.
 
 If the software needs a fixed user and password, generate an `rpcauth` line instead of writing a
-plain password into the config. Pick a long random password and run:
+plain password into the config. Your Linux login is **not** an RPC login: the node only knows the
+users you add here.
 
-```bash
-python3 - <<'EOF'
-import hmac, os, getpass
-user = input("rpc user: ")
-pw = getpass.getpass("rpc password: ")
-salt = os.urandom(16).hex()
-print(f"rpcauth={user}:{salt}${hmac.new(salt.encode(), pw.encode(), 'sha256').hexdigest()}")
-EOF
-```
+1. Pick a user name (for example `pool`) and a long random password, and write both down.
+2. Paste this into the terminal as **one** line:
 
-Add the printed `rpcauth=...` line to `blazecoin.conf` and run `sudo systemctl restart blazecoind`. The
-software then uses that user and password against `127.0.0.1:55413`. Keep RPC on loopback. If the
+   ```bash
+   python3 -c 'import hmac,os,getpass; u=input("rpc user: "); p=getpass.getpass("rpc password: "); s=os.urandom(16).hex(); print("rpcauth="+u+":"+s+"$"+hmac.new(s.encode(),p.encode(),"sha256").hexdigest())'
+   ```
+
+   Type the user and the password when asked (nothing shows while you type the password). It
+   prints one line starting `rpcauth=pool:`.
+3. Add that line at the end of the config: `sudo nano /var/lib/blazecoin/blazecoin.conf`, paste with
+   Ctrl+Shift+V, keep it on one line with no space in front, save with Ctrl+O, Enter, Ctrl+X.
+4. `sudo systemctl restart blazecoind`, then run the RPC test in 12.3. Give curl the password you
+   wrote down, not the long hash from the config.
+
+The software then uses that user and password against `127.0.0.1:55413`. Keep RPC on loopback. If the
 pool runs on another machine, use a VPN or an SSH tunnel, and never port-forward 55413.
 
 Mining pools must pay out to **legacy `B...` addresses**. SegWit is disabled on this chain, so coins
@@ -281,7 +285,7 @@ curl --user USER --data-binary '{"jsonrpc":"1.0","id":"t","method":"getblocktemp
 | Result | Meaning |
 |---|---|
 | a JSON block template (`"height"`, `"coinbasevalue"`, …) | RPC works. If the pool still fails, the fault is in the pool software or its config |
-| `401 Unauthorized` / empty reply | wrong user or password, or the `rpcauth` line was added without restarting the node |
+| `401 Unauthorized` / empty reply | wrong user or password (your Linux login does not work here; see step 8), or the `rpcauth` line was added without restarting the node. Add `-i` to the curl command to see the status line |
 | `Connection refused` | node not running, or the pool is on another machine (RPC answers on 127.0.0.1 only; see step 8) |
 | `must be called with the segwit rule set` | the pool calls `getblocktemplate` without `"rules":["segwit"]`. This node needs the rule even though SegWit is not active on Blazecoin. Most pool software sends it already |
 | `is in initial sync` / `is not connected` | back to 12.1 / 12.2 |
