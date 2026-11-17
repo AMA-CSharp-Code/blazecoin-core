@@ -30,6 +30,15 @@ that will ever exist (≈ 888.9 M) has been mined.
 
 Website: https://blazecoin.co.uk · Original 2014 announcement: https://bitcointalk.org/index.php?topic=624778.0
 
+## Patents: none, ever
+
+Nothing in this repository is or will be patented by its author or the Blazecoin project. The post-quantum output type
+(P2PQH, ML-DSA-44 per NIST FIPS 204), its activation mechanism and every test and vector here may be
+implemented, copied and built upon by anyone, under the MIT licence, with an irrevocable royalty-free licence
+to any patent right either might ever hold. The full pledge, the field report on two months of mainnet
+use, the reference verifier and the test vectors are at
+https://github.com/AMA-CSharp-Code/blazecoin-pq-toolkit.
+
 ## Downloads
 
 Binaries are published on the **Releases** page of this repository: a Windows x64 daemon bundle and

@@ -612,6 +612,12 @@ the rehearsal, and sole-miner status lets it sit close to the tip when that day 
   the coinbase list as `BQ`, the §10.5 dress rehearsal on regtest with every component, then the height
   and the months of notice.
 
+## Patent pledge
+
+The author and the project have not sought and will not seek patents on anything in this document or its implementation, and grant an irrevocable, royalty-free licence to any patent right either might ever hold over them. The
+design rests on CRYSTALS-Dilithium (2017), NIST FIPS 204 (2024), P2PKH (2009) and scrypt (2011), none of which the author or the project claims. Dated record: live on mainnet since block 4,250,000, 2026-09-16 20:18:58 UTC.
+Full text: `PATENT-PLEDGE.md` in the toolkit repository.
+
 ## 16. Activation record — `H_Q` PASSED, 2026-09-16
 
 **The fork is live on mainnet.** Verified on the dev-box Indexer daemon at 22:50 BST 2026-09-16:
