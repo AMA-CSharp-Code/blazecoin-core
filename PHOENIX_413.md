@@ -215,7 +215,7 @@ Wallet page carries the post-fork card set (Original = ARCHIVED, V1.5 links →
 announcement; the V1.5 README notice ("run v1.5.2 or later — older builds stop at `H_A`")
 was added 2026-09-10 (`Blazecoin_Core_V1.5/README.md`, top banner; it had been owed since fork day).
 
-**🚦 RELEASE GATE (Andrew, 2026-08-26) — LIFTED.** The rule was: no GitHub
+**🚦 RELEASE GATE (the operator, 2026-08-26) — LIFTED.** The rule was: no GitHub
 release, tag, or downloadable binary for V1.5.2 until EVERY wallet implementation
 was done — V2 daemon, lite heads (WASM/Android/iOS as applicable), all V1.5
 platforms — and `H_A` chosen. Outcome: **V1.5.2 released 2026-08-26** for

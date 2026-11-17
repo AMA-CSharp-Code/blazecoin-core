@@ -112,6 +112,9 @@
     <ClCompile Include="..\..\src\bench\pool.cpp">
       <ObjectFileName>$(IntDir)bench_pool.obj</ObjectFileName>
     </ClCompile>
+    <ClCompile Include="..\..\src\bench\pq_verify.cpp">
+      <ObjectFileName>$(IntDir)bench_pq_verify.obj</ObjectFileName>
+    </ClCompile>
     <ClCompile Include="..\..\src\bench\prevector.cpp">
       <ObjectFileName>$(IntDir)bench_prevector.obj</ObjectFileName>
     </ClCompile>

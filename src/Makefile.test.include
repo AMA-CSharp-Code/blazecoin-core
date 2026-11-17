@@ -34,6 +34,8 @@ GENERATED_TEST_FILES = $(JSON_TEST_FILES:.json=.json.h) $(RAW_TEST_FILES:.raw=.r
 BITCOIN_TEST_SUITE = \
   test/main.cpp \
   test/phoenix413_vector_data.h \
+  test/pqsig_vector_data.h \
+  test/mldsa44_acvp_data.h \
   $(TEST_UTIL_H)
 
 FUZZ_SUITE_LD_COMMON = \
@@ -116,6 +118,7 @@ BITCOIN_TESTS =\
   test/miniminer_tests.cpp \
   test/miniscript_tests.cpp \
   test/minisketch_tests.cpp \
+  test/mldsa44_kat_tests.cpp \
   test/multisig_tests.cpp \
   test/net_peer_connection_tests.cpp \
   test/net_peer_eviction_tests.cpp \
@@ -129,6 +132,7 @@ BITCOIN_TESTS =\
   test/policyestimator_tests.cpp \
   test/pool_tests.cpp \
   test/pow_tests.cpp \
+  test/pqsig_tests.cpp \
   test/prevector_tests.cpp \
   test/raii_event_tests.cpp \
   test/random_tests.cpp \
@@ -366,6 +370,7 @@ test_fuzz_fuzz_SOURCES = \
  test/fuzz/policy_estimator_io.cpp \
  test/fuzz/poolresource.cpp \
  test/fuzz/pow.cpp \
+ test/fuzz/pq_script.cpp \
  test/fuzz/prevector.cpp \
  test/fuzz/primitives_transaction.cpp \
  test/fuzz/process_message.cpp \

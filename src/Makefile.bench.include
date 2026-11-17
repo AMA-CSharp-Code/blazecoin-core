@@ -49,6 +49,7 @@ bench_bench_bitcoin_SOURCES = \
   bench/peer_eviction.cpp \
   bench/poly1305.cpp \
   bench/pool.cpp \
+  bench/pq_verify.cpp \
   bench/prevector.cpp \
   bench/random.cpp \
   bench/readblock.cpp \

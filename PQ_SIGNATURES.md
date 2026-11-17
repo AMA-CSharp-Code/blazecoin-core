@@ -1,6 +1,6 @@
 # PQ Signatures — a post-quantum output type for Blazecoin (proposal)
 
-> **Status: ✅ ACTIVE ON MAINNET since block 4,250,000 (2026-09-16 20:18:58Z); first PQ coinbase 4,250,880 (21:08:53Z) — activation record in §16.** Originally: SPECIFICATION drafted 2026-09-14; ALL 13 DECISIONS IN §13 RATIFIED BY ANDREW 2026-09-14 (scheme, no hybrid, `BQ` prefix, opcode `0xba`, sigop weight 50, months of lead time + V1.5 retirement, codename left to marketing, lite-wallet PQ receive after activation, the digest, the 5,000-byte PQ push cap, seed-derived keys with BouncyCastle as the C# implementation of record, the migration order, the Python vector authority). BUILT 2026-09-14/15 and merged — §15 is the as-built record. **`H_Q` = 4,250,000, chosen by Andrew 2026-09-15 07:00 ("go for block 4,250,000"; ~25 h ahead of the tip at the time, ~1 day of notice — the sole-miner exemption of §7). Rollout record in §15.**
+> **Status: ✅ ACTIVE ON MAINNET since block 4,250,000 (2026-09-16 20:18:58Z); first PQ coinbase 4,250,880 (21:08:53Z) — activation record in §16.** Originally: SPECIFICATION drafted 2026-09-14; ALL 13 DECISIONS IN §13 RATIFIED BY THE OPERATOR 2026-09-14 (scheme, no hybrid, `BQ` prefix, opcode `0xba`, sigop weight 50, months of lead time + V1.5 retirement, codename left to marketing, lite-wallet PQ receive after activation, the digest, the 5,000-byte PQ push cap, seed-derived keys with BouncyCastle as the C# implementation of record, the migration order, the Python vector authority). BUILT 2026-09-14/15 and merged — §15 is the as-built record. **`H_Q` = 4,250,000, chosen by the operator 2026-09-15 07:00 ("go for block 4,250,000"; ~25 h ahead of the tip at the time, ~1 day of notice — the sole-miner exemption of §7). Rollout record in §15.**
 > Post-quantum plan item 3 (plan of record: MAUI `ROADMAP.md` §G; item 1 = the wallet's Quantum
 > Exposure page, shipped; item 2 = key rotation, `docs/KEY_ROTATION.md` in the website repo, built
 > 2026-09-13; item 4 = the benchmark library, **built 2026-09-14** — `BlazecoinWallet.PqBench` in the MAUI
@@ -218,6 +218,17 @@ Sigops: `OP_CHECKPQSIG` counts as **50 legacy sigops** toward `MAX_BLOCK_SIGOPS_
 1,600 PQ verifications per block, ~6× the byte-limited maximum — the byte limit binds first; the
 sigop weight is a belt-and-braces bound on verification time: at the measured 132 µs, 1,600 verifications
 are ~0.2 s, so 50 is very conservative and could drop to 20 without risk).
+
+> **Correction, 2026-11-17 (found while checking the field report against the code).** The paragraph above is
+> wrong on two points. (1) The legacy sigop count is taken from the scriptPubKey of the output being *created*
+> (`GetLegacySigOpCount`, `src/consensus/tx_verify.cpp`) and multiplied by `WITNESS_SCALE_FACTOR`, so each new
+> post-quantum output costs 50 × 4 = 200 against `MAX_BLOCK_SIGOPS_COST` (80,000) and against the standard
+> transaction limit (16,000). A block can therefore create at most **400** post-quantum outputs and a standard
+> transaction at most **80**, not "1,600 verifications per block". Spending is not limited by this constant: for
+> spends the byte limit binds first. (2) The 132 µs figure is the C# (BouncyCastle) measurement in the table, not
+> the node's. The node's own code measures 102.9 µs per input against 57.4 µs for a classic input (bench
+> `src/bench/pq_verify.cpp`, 2026-11-11), so 50 overstates the relative cost about 28 times. The constant is a
+> consensus rule and stays as it is; changing it would be a fork.
 
 Storage: at Blazecoin's real volume (a few hundred transactions a day, most of them the pool's) the
 UTXO set and chain growth stay negligible; a fully PQ chain at today's rate adds well under 1 GB a
@@ -465,7 +476,7 @@ keygen, ctx-aware sign/verify, tagged-hash seed derivation) are the seed of the 
   the site that evening. Note: the daemon answers a malformed PQ signature with RPC error −3, not `false`.
 - It does not touch regtest's Bitcoin-shaped defaults (D1).
 
-## 13. Decisions — RATIFIED 2026-09-14 (Andrew: "All 13 agreed")
+## 13. Decisions — RATIFIED 2026-09-14 (the operator: "All 13 agreed")
 
 Every item below is now the decision of record; the spec's text is authoritative as written. Re-opening one is a
 change request against this section, not a discussion.
@@ -486,11 +497,11 @@ change request against this section, not a discussion.
    paying a `BQ` address early parks coin until `H_Q`).
 
 
-## 15. As-built record (2026-09-14 → 15, Andrew: "lets build it all today")
+## 15. As-built record (2026-09-14 → 15, the operator: "lets build it all today")
 
 Everything below was built the same night the decisions were ratified, on branches, with the shared
 vectors as the arbiter. **Nothing is merged to a main branch or deployed and no `H_Q` is chosen**
-until the §10.5 dress rehearsal has run. Andrew floated `H_Q` = 4,246,000 that evening; that block
+until the §10.5 dress rehearsal has run. The operator floated `H_Q` = 4,246,000 that evening; that block
 arrived the same night with no code on any node, so the answer was no — the height is picked after
 the rehearsal, and sole-miner status lets it sit close to the tip when that day comes.
 
@@ -499,7 +510,14 @@ the rehearsal, and sole-miner status lets it sit close to the tip when that day 
   against it byte-for-byte for seeded keygen and deterministic signing under `ctx` before anything else
   was written). 3 derivation keys, 3 signed transactions (1 / 1+2 / 26 inputs, locktime, sequences,
   amounts), 40 spend cases each with a named verdict. Compiled into `src/test/pqsig_vector_data.h`;
-  copied into the MAUI repo's `Lite.Core.Tests`. The ACVP KAT import is still owed.
+  copied into the MAUI repo's `Lite.Core.Tests`. **ACVP KAT import DONE 2026-11-13:** NIST's FIPS 204
+  known-answer cases for ML-DSA-44 (ACVP-Server gen-val, vsId 42; 25 keyGen, 24 sigGen covering deterministic
+  and hedged signing under the external/pure and internal interfaces, 30 sigVer including NIST's "modified
+  message / commitment / z / hint" cases) are selected by `test/pqsig/import_acvp_mldsa44.py` into
+  `mldsa44_acvp_vectors.json`, compiled by `gen_mldsa44_acvp_header.py` into `src/test/mldsa44_acvp_data.h`,
+  and pinned by `src/test/mldsa44_kat_tests.cpp` (4 cases; the hedged and internal cases go through the
+  reference code's `_internal` entry points, the rest through the `mldsa44::` wrapper). preHash (HashML-DSA)
+  and externalMu groups are not applicable to this build and are not imported.
 - **Daemon, consensus half** — V2 branch `pq-consensus` (`685aac54b7` … `0bb896157f`, 74 files):
   vendored ML-DSA-44 under `src/crypto/mldsa/` (`libbitcoin_mldsa` MSVC project, randomness never
   linked, `DILITHIUM_RANDOMIZED_SIGNING` is an `#error`), `src/crypto/mldsa44.h` wrapper, `src/script/pq.h`,
@@ -516,7 +534,22 @@ the rehearsal, and sole-miner status lets it sit close to the tip when that day 
   regardless of context (no historical block carries one, so no delta on the real chain);
   `CScript::HasValidOps` accepts `0xba` and 5,000-byte elements (a decode heuristic, not consensus);
   pre-activation a PQ spend is refused by policy as `scriptsig-size` before consensus sees it.
-  Not done: fuzz targets (no fuzz build on this box), the autotools build was not exercised.
+  **Fuzz targets DONE 2026-11-13:** `src/test/fuzz/pq_script.cpp` = `mldsa44` (keygen/sign/verify on fuzzed
+  seed, message and context; determinism; any single changed byte of signature, message or context refused),
+  `pq_sighash` (templates, key hash, s3.5 digest on fuzzed transactions; cached == uncached digest) and
+  `pq_spend` (a real signed P2PQH spend verifies through `VerifyScript` with both checkers; nine scripted
+  mutations fail; arbitrary scriptSig bytes never crash). Built by the MSVC `fuzz` project (glob) and listed
+  for `--enable-fuzz`; `test/pqsig/run_pq_fuzz_seeds.py` runs a generated seed corpus through the file runner.
+  The autotools test list now carries `pqsig_tests.cpp` and `mldsa44_kat_tests.cpp` too (until 2026-11-13 the
+  PQ unit tests were MSVC-only). **First libFuzzer campaign 2026-11-13** (WSL Ubuntu 22.04, clang 17,
+  `--enable-fuzz --with-sanitizers=fuzzer,address,undefined`): `mldsa44` 10 min / 570,152 runs / 177 edges,
+  `pq_sighash` 10 min / 2,714,962 runs / 1,020 edges, `pq_spend` 15 min / 808,500 runs / 1,307 edges; no
+  sanitizer or assertion finding in the daemon. Two harness bugs were found and fixed on the way: the
+  swap-the-key case compared against a second seed that padded to the same zeros when the input ran dry
+  (the honest spend rightly verified), and `MakeSpend` consumed two values in one argument list, whose
+  evaluation order MSVC (right-to-left) and clang (left-to-right) pick differently, so a Linux artefact did
+  not reproduce on the Windows runner until the consumers were sequenced. Corpora live only in the WSL tree
+  (`~/blz-fuzz/fuzz-out`); a longer campaign is open work.
 - **Daemon, wallet half** — V2 branch `pq-wallet` (on top of `pq-consensus`). Commits `e2b6c7de63`, `238056271e`, `5cdac86553` (34 files). Descriptor `pqkh(mldsa44:<32-byte seed hex>/*)`
   (private, ranged; public/normalised form carries the 20-byte seed id; single `pqkh(mldsa44pub:<1312-byte pubkey hex>)`
   for `InferDescriptor`/watch-only) — `OutputType::PQ` = `"pq"` in every address-type RPC argument; the seed
@@ -562,7 +595,7 @@ the rehearsal, and sole-miner status lets it sit close to the tip when that day 
   (every address column is already ≥ 64). Docs: `ECOSYSTEM.md`, `KEY_ROTATION.md`, `LISTING_SPEC_PACK.md`,
   `PAYOUTS.md` (+ Desktop twin).
 - **`H_Q` = 4,250,000 (2026-09-15).** Mainnet `pqsigHeight` set in `chainparams.cpp` the same morning (daemon 2.1.0); the lite constant and `SupportedForks` flipped; gateways announce `pqsig` / 4,250,000 / 2.0.5. Rollout order as executed is appended below as it happens.
-  - 2026-09-15 07:25 — home daemons ×3 on the fork build via the deploy gate (Andrew; gate green; backup kept); `pqsig` reported buried at 4,250,000. (`PQ_ROLLOUT_4250000.md` item 1.)
+  - 2026-09-15 07:25 — home daemons ×3 on the fork build via the deploy gate (the operator; gate green; backup kept); `pqsig` reported buried at 4,250,000. (`PQ_ROLLOUT_4250000.md` item 1.)
   - 2026-09-15 07:40 — nightly sweep PQ-aware (`4534d24cdd`, 26-input PQ batches, auto destination type, 130 batches) + the 03:00 task re-pointed (item 7).
   - 2026-09-15 06:44–07:30 — both OVH relays on the fork daemon, gateways swapped (BQ index, fork fields) and announcing `pqsig` / 4,250,000 / min client 2.0.5 (item 2).
   - 2026-09-15 08:35 — web wallet 2.0.5 live on gw + gw2 (fork rules + banner); Android 1.2.0 (5) built + pushed (item 3).
@@ -572,8 +605,8 @@ the rehearsal, and sole-miner status lets it sit close to the tip when that day 
   - 2026-09-15 09:05 — gates `Payout:PostQuantumAddresses` + `AddressVerification:AllowPostQuantum` set true in the live configs (effective at the next Payout/Identity restart); pay-in button made height-aware (item 8).
   - 2026-09-15 11:05Z — public `blazecoin-core` 2.1.0 released (Windows + Linux) and the mirror re-snapshotted; this file's §8 treasury details are redacted in the public copy.
   - 2026-09-15 11:18Z — `blazecoin-wallet` 2.0.5 released (bundles daemon 2.1.0); every public download is now fork-ready.
-  - 2026-09-15 ~12:40 — special vintage **"Quantum Epoch"** (badge key 8) anchored to block 4,250,880, the first `BQ` coinbase (Andrew's choice of anchor and name): Indexer `562b191` (`Vintage:QuantumEpochHeight`, self-heal, named milestones 4,250,000 / 4,250,880), Identity `9a49109` (claim suffix `quantum-epoch`), MVC `8be1b8d` (badge, card slot, placeholder medallion), wallet Core `2c71831` (Provenance kind); lore + art still Andrew's.
-  - 2026-09-15 11:30Z — fleet restarted with every public link fork-ready; Bitcointalk announcement posted (Andrew). Tip 4,247,588; the network waits for 4,250,000.
+  - 2026-09-15 ~12:40 — special vintage **"Quantum Epoch"** (badge key 8) anchored to block 4,250,880, the first `BQ` coinbase (the operator's choice of anchor and name): Indexer `562b191` (`Vintage:QuantumEpochHeight`, self-heal, named milestones 4,250,000 / 4,250,880), Identity `9a49109` (claim suffix `quantum-epoch`), MVC `8be1b8d` (badge, card slot, placeholder medallion), wallet Core `2c71831` (Provenance kind); lore + art still the operator's.
+  - 2026-09-15 11:30Z — fleet restarted with every public link fork-ready; Bitcointalk announcement posted (the operator). Tip 4,247,588; the network waits for 4,250,000.
 - **Owed at the time the height was chosen (was: before choosing it):** merge the branches (done), deploy fork-aware daemons to every
   node (`Deploy-BlazecoinV2.ps1` gate), ship the lite heads (banner first) and the services, regenerate
   the coinbase list as `BQ`, the §10.5 dress rehearsal on regtest with every component, then the height
@@ -618,7 +651,7 @@ saying *"quantum hardened"* — **met on 2026-09-28, when the treasury moved beh
 ## 17. Phase 2 ideas — HYPOTHETICAL (brainstorm 2026-10-30, no dates, no commitments)
 
 Captured from a "how would a quantum computer crack our wallets, and what could replace the maths" conversation
-(Andrew, 2026-10-30). Nothing here is planned; each item is a possible third consensus change or custody upgrade
+(the operator, 2026-10-30). Nothing here is planned; each item is a possible third consensus change or custody upgrade
 and would go through the governance ballot first. Wallet-side ideas from the same conversation live in the MAUI
 `ROADMAP.md` §H.
 
