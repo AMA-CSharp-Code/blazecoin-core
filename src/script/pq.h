@@ -69,6 +69,13 @@ std::vector<unsigned char> PQKeyBlob(Span<const unsigned char> pubkey);
 /** Exact template test: size 34, [0] == 0x20, [33] == OP_CHECKPQSIG. */
 bool IsPayToPQKeyHash(const CScript& script, uint256* pqkh = nullptr);
 
+/** The maxburnamount test for an OUTPUT script (sendrawtransaction, submitpackage): true when coins
+ *  sent to it can never be spent. CScript::HasValidOps accepts OP_CHECKPQSIG and 5,000-byte elements
+ *  because it also decodes P2PQH scriptSigs, but in an output those are spendable only as the exact
+ *  P2PQH template: every other script runs in SigVersion::BASE, where a push above 520 bytes or
+ *  opcode 0xba fails. So outside the template the classic limits apply here. */
+bool IsBurnOutputScript(const CScript& script);
+
 /** 0x20 <pqkh> OP_CHECKPQSIG */
 CScript GetScriptForPQKeyHash(const uint256& pqkh);
 

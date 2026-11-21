@@ -4,6 +4,7 @@
 
 #include <wallet/wallet.h>
 
+#include <fstream>
 #include <future>
 #include <memory>
 #include <stdint.h>
@@ -330,6 +331,42 @@ BOOST_FIXTURE_TEST_CASE(importwallet_rescan, TestChain100Setup)
             bool expected = i >= 30;
             BOOST_CHECK_EQUAL(found, expected);
         }
+    }
+}
+
+// Blazecoin (bug-bounty round 17): dumpwallet on a legacy wallet must not abort the daemon when the
+// default address type cannot be formed from a legacy key (-addresstype=pq or bech32m). The dump line
+// of an unlabelled key then carries its legacy address.
+BOOST_FIXTURE_TEST_CASE(dumpwallet_with_pq_or_bech32m_default_address_type, TestChain100Setup)
+{
+    int n = 0;
+    for (const OutputType type : {OutputType::PQ, OutputType::BECH32M}) {
+        const fs::path dump_path = m_args.GetDataDirNet() / fs::PathFromString(strprintf("wallet-type-%d.dump", n++));
+        WalletContext context;
+        context.args = &m_args;
+        const std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(m_node.chain.get(), "", CreateMockableWalletDatabase());
+        wallet->m_default_address_type = type;
+        {
+            auto spk_man = wallet->GetOrCreateLegacyScriptPubKeyMan();
+            LOCK2(wallet->cs_wallet, spk_man->cs_KeyStore);
+            spk_man->AddKeyPubKey(coinbaseKey, coinbaseKey.GetPubKey());
+
+            AddWallet(context, wallet);
+            LOCK(Assert(m_node.chainman)->GetMutex());
+            wallet->SetLastBlockProcessed(m_node.chainman->ActiveChain().Height(), m_node.chainman->ActiveChain().Tip()->GetBlockHash());
+        }
+        JSONRPCRequest request;
+        request.context = &context;
+        request.params.setArray();
+        request.params.push_back(fs::PathToString(dump_path));
+
+        BOOST_CHECK_NO_THROW(wallet::dumpwallet().HandleRequest(request));
+        RemoveWallet(context, wallet, /* load_on_start= */ std::nullopt);
+
+        std::ifstream file{dump_path};
+        const std::string dump{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
+        const std::string legacy_address = EncodeDestination(PKHash(coinbaseKey.GetPubKey()));
+        BOOST_CHECK_MESSAGE(dump.find("addr=" + legacy_address) != std::string::npos, "dump lists the key under its legacy address");
     }
 }
 

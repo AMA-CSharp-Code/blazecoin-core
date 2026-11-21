@@ -207,6 +207,27 @@ private:
     /** Return a set of headers that satisfy our proof-of-work threshold */
     std::vector<CBlockHeader> PopHeadersReadyForAcceptance();
 
+    /** Blazecoin: the Phoenix-413 anchor of the chain being received in one
+     *  phase: block phoenix413Height's nBits and its parent's time. Taken from
+     *  m_chain_start when that is at or above the activation height, otherwise
+     *  captured from the header stream as it passes the activation height. */
+    struct Phoenix413Anchor {
+        bool known{false};
+        uint32_t bits{0};
+        int64_t parent_time{0};
+    };
+
+    /** Blazecoin: the anchor as far as m_chain_start knows it. */
+    Phoenix413Anchor Phoenix413AnchorFromChainStart() const;
+
+    /** Blazecoin: above the Phoenix-413 activation height the target of every
+     *  header is a pure function of the anchor, the height and the previous
+     *  header's time, so it is checked exactly here (PermittedDifficultyTransition
+     *  cannot bound it: it does not see timestamps). At the activation height
+     *  itself the anchor is recorded. Returns false for a wrong target. */
+    bool CheckPhoenix413Target(Phoenix413Anchor& anchor, int64_t next_height,
+            int64_t prev_time, uint32_t nbits) const;
+
 private:
     /** NodeId of the peer (used for log messages) **/
     const NodeId m_id;
@@ -261,6 +282,15 @@ private:
      * processing.
      */
     uint256 m_redownload_buffer_first_prev_hash;
+
+    /** Blazecoin: Phoenix-413 anchors of the two phases (kept apart: the
+     *  redownloaded stream is only tied to the first one by the commitments). */
+    Phoenix413Anchor m_presync_phoenix_anchor;
+    Phoenix413Anchor m_redownload_phoenix_anchor;
+
+    /** Blazecoin: time of the last header accepted in REDOWNLOAD (initialized
+     *  to m_chain_start), the "previous header time" of the Phoenix-413 check. */
+    int64_t m_redownload_last_time{0};
 
     /** The accumulated work on the redownloaded chain. */
     arith_uint256 m_redownload_chain_work;

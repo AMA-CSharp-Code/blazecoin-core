@@ -33,6 +33,8 @@ HeadersSyncState::HeadersSyncState(NodeId id, const Consensus::Params& consensus
     m_last_header_received(m_chain_start->GetBlockHeader()),
     m_current_height(chain_start->nHeight)
 {
+    m_presync_phoenix_anchor = Phoenix413AnchorFromChainStart();
+
     // Estimate the number of blocks that could possibly exist on the peer's
     // chain *right now* using 6 blocks/second (fastest blockrate given the MTP
     // rule) times the number of seconds from the last allowed block until
@@ -169,6 +171,8 @@ bool HeadersSyncState::ValidateAndStoreHeadersCommitments(const std::vector<CBlo
         m_redownload_buffer_first_prev_hash = m_chain_start->GetBlockHash();
         m_redownload_buffer_last_hash = m_chain_start->GetBlockHash();
         m_redownload_chain_work = m_chain_start->nChainWork;
+        m_redownload_phoenix_anchor = Phoenix413AnchorFromChainStart();
+        m_redownload_last_time = m_chain_start->GetBlockTime();
         m_download_state = State::REDOWNLOAD;
         LogPrint(BCLog::NET, "Initial headers sync transition with peer=%d: reached sufficient work at height=%i, redownloading from height=%i\n", m_id, m_current_height, m_redownload_buffer_last_height);
     }
@@ -190,6 +194,14 @@ bool HeadersSyncState::ValidateAndProcessSingleHeader(const CBlockHeader& curren
     if (!PermittedDifficultyTransition(m_consensus_params, next_height,
                 m_last_header_received.nBits, current.nBits)) {
         LogPrint(BCLog::NET, "Initial headers sync aborted with peer=%d: invalid difficulty transition at height=%i (presync phase)\n", m_id, next_height);
+        return false;
+    }
+
+    // Blazecoin: above the Phoenix-413 height the check above passes everything;
+    // the exact per-block target is checked here instead.
+    if (!CheckPhoenix413Target(m_presync_phoenix_anchor, next_height,
+                m_last_header_received.GetBlockTime(), current.nBits)) {
+        LogPrint(BCLog::NET, "Initial headers sync aborted with peer=%d: wrong Phoenix-413 target at height=%i (presync phase)\n", m_id, next_height);
         return false;
     }
 
@@ -241,6 +253,12 @@ bool HeadersSyncState::ValidateAndStoreRedownloadedHeader(const CBlockHeader& he
         return false;
     }
 
+    if (!CheckPhoenix413Target(m_redownload_phoenix_anchor, next_height,
+                m_redownload_last_time, header.nBits)) {
+        LogPrint(BCLog::NET, "Initial headers sync aborted with peer=%d: wrong Phoenix-413 target at height=%i (redownload phase)\n", m_id, next_height);
+        return false;
+    }
+
     // Track work on the redownloaded chain
     m_redownload_chain_work += GetBlockProof(CBlockIndex(header));
 
@@ -274,8 +292,43 @@ bool HeadersSyncState::ValidateAndStoreRedownloadedHeader(const CBlockHeader& he
     m_redownloaded_headers.emplace_back(header);
     m_redownload_buffer_last_height = next_height;
     m_redownload_buffer_last_hash = header.GetHash();
+    m_redownload_last_time = header.GetBlockTime();
 
     return true;
+}
+
+HeadersSyncState::Phoenix413Anchor HeadersSyncState::Phoenix413AnchorFromChainStart() const
+{
+    Phoenix413Anchor anchor;
+    if (m_chain_start->nHeight >= m_consensus_params.phoenix413Height) {
+        const CBlockIndex* pindex = m_chain_start->GetAncestor(m_consensus_params.phoenix413Height);
+        if (pindex != nullptr && pindex->pprev != nullptr) {
+            anchor.known = true;
+            anchor.bits = pindex->nBits;
+            anchor.parent_time = pindex->pprev->GetBlockTime();
+        }
+    }
+    return anchor;
+}
+
+bool HeadersSyncState::CheckPhoenix413Target(Phoenix413Anchor& anchor, int64_t next_height,
+        int64_t prev_time, uint32_t nbits) const
+{
+    const int64_t anchor_height = m_consensus_params.phoenix413Height;
+    if (next_height < anchor_height) return true;
+    if (next_height == anchor_height) {
+        // The anchor block itself still follows the old rule (bounded by
+        // PermittedDifficultyTransition); the header before it is its parent.
+        anchor.known = true;
+        anchor.bits = nbits;
+        anchor.parent_time = prev_time;
+        return true;
+    }
+    // Cannot happen for a chain start that is in our block index; without an
+    // anchor there is nothing to compare against, and full validation decides.
+    if (!anchor.known) return true;
+    return nbits == CalculatePhoenix413Target(anchor.bits, anchor.parent_time, anchor_height,
+            next_height, prev_time, m_consensus_params.nPowTargetSpacing, m_consensus_params.powLimit);
 }
 
 std::vector<CBlockHeader> HeadersSyncState::PopHeadersReadyForAcceptance()

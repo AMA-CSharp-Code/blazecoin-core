@@ -522,6 +522,32 @@ BOOST_AUTO_TEST_CASE(pqsig_interpreter_edges)
     BOOST_CHECK(!pq::IsPayToPQKeyHash(CScript() << OP_1 << std::vector<unsigned char>(32, 0)));
     BOOST_CHECK(!pq::IsPayToPQKeyHash(CScript()));
 
+    // The maxburnamount guard (bug-bounty round 17). Outside the exact template an output script runs in
+    // SigVersion::BASE, where a push above 520 bytes or opcode 0xba fails: such an output is a burn.
+    // CScript::HasValidOps passes both (it also decodes P2PQH scriptSigs), so the guard has its own test.
+    {
+        const CScript big_push = CScript() << std::vector<unsigned char>(521, 0x42) << OP_DROP << OP_TRUE;
+        const CScript stray_pqsig = CScript() << OP_1 << OP_1 << OP_CHECKPQSIG;
+        for (const CScript& burn : {big_push, stray_pqsig}) {
+            BOOST_CHECK(burn.HasValidOps());        // the decode heuristic accepts it...
+            BOOST_CHECK(!burn.IsUnspendable());
+            std::vector<std::vector<unsigned char>> s;
+            BOOST_CHECK(!EvalScript(s, burn, SCRIPT_VERIFY_NONE, nochecker, SigVersion::BASE, &err)); // ...but it can never be spent
+            BOOST_CHECK(pq::IsBurnOutputScript(burn));
+        }
+        // What the guard always caught stays caught.
+        BOOST_CHECK(pq::IsBurnOutputScript(CScript() << OP_RETURN << std::vector<unsigned char>(20, 1)));
+        BOOST_CHECK(pq::IsBurnOutputScript(CScript() << static_cast<opcodetype>(0xff)));
+        BOOST_CHECK(pq::IsBurnOutputScript(CScript() << std::vector<unsigned char>(5001, 0x42)));
+        const std::vector<unsigned char> oversized(MAX_SCRIPT_SIZE + 1, static_cast<unsigned char>(OP_NOP));
+        BOOST_CHECK(pq::IsBurnOutputScript(CScript(oversized.begin(), oversized.end())));
+        // Spendable outputs are not burns: the P2PQH template, P2PKH, a 520-byte push.
+        BOOST_CHECK(!pq::IsBurnOutputScript(pq::GetScriptForPQKeyHash(uint256::ZERO)));
+        BOOST_CHECK(!pq::IsBurnOutputScript(CScript() << OP_DUP << OP_HASH160 << std::vector<unsigned char>(20, 7) << OP_EQUALVERIFY << OP_CHECKSIG));
+        BOOST_CHECK(!pq::IsBurnOutputScript(CScript() << std::vector<unsigned char>(520, 0x42) << OP_DROP << OP_TRUE));
+        BOOST_CHECK(!pq::IsBurnOutputScript(CScript()));
+    }
+
     // ParseScript accepts the PQ name; GetOpName keeps the upstream one.
     BOOST_CHECK(ParseScript("OP_CHECKPQSIG") == (CScript() << OP_CHECKPQSIG));
     BOOST_CHECK(ParseScript("CHECKPQSIG") == (CScript() << OP_CHECKPQSIG));

@@ -6,7 +6,7 @@
 #define BITCOIN_BITCOIN_CONFIG_H
 
 /* Version Build */
-#define CLIENT_VERSION_BUILD 3
+#define CLIENT_VERSION_BUILD 4
 
 /* Version is release */
 #define CLIENT_VERSION_IS_RELEASE true
@@ -56,13 +56,13 @@
 #define PACKAGE_NAME "Blazecoin Core"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "Blazecoin Core 2.1.3"
+#define PACKAGE_STRING "Blazecoin Core 2.1.4"
 
 /* Define to the home page for this package. */
 #define PACKAGE_URL "https://blazecoin.co.uk/"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "2.1.3"
+#define PACKAGE_VERSION "2.1.4"
 
 /* Define this symbol if the minimal qt platform exists */
 #define QT_QPA_PLATFORM_MINIMAL 1

@@ -18,6 +18,7 @@
 #include <rpc/server.h>
 #include <rpc/server_util.h>
 #include <rpc/util.h>
+#include <script/pq.h>
 #include <txmempool.h>
 #include <univalue.h>
 #include <util/fs.h>
@@ -78,7 +79,7 @@ static RPCHelpMan sendrawtransaction()
             }
 
             for (const auto& out : mtx.vout) {
-                if((out.scriptPubKey.IsUnspendable() || !out.scriptPubKey.HasValidOps()) && out.nValue > max_burn_amount) {
+                if (pq::IsBurnOutputScript(out.scriptPubKey) && out.nValue > max_burn_amount) {
                     throw JSONRPCTransactionError(TransactionError::MAX_BURN_EXCEEDED);
                 }
             }
@@ -896,7 +897,7 @@ static RPCHelpMan submitpackage()
                 }
 
                 for (const auto& out : mtx.vout) {
-                    if((out.scriptPubKey.IsUnspendable() || !out.scriptPubKey.HasValidOps()) && out.nValue > max_burn_amount) {
+                    if (pq::IsBurnOutputScript(out.scriptPubKey) && out.nValue > max_burn_amount) {
                         throw JSONRPCTransactionError(TransactionError::MAX_BURN_EXCEEDED);
                     }
                 }

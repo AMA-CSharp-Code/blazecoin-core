@@ -41,6 +41,21 @@ bool IsPayToPQKeyHash(const CScript& script, uint256* pqkh)
     return true;
 }
 
+bool IsBurnOutputScript(const CScript& script)
+{
+    if (script.IsUnspendable()) return true;
+    if (IsPayToPQKeyHash(script)) return false;
+    CScript::const_iterator it = script.begin();
+    while (it < script.end()) {
+        opcodetype opcode;
+        std::vector<unsigned char> item;
+        if (!script.GetOp(it, opcode, item) || opcode > MAX_OPCODE || item.size() > MAX_SCRIPT_ELEMENT_SIZE) {
+            return true;
+        }
+    }
+    return false;
+}
+
 CScript GetScriptForPQKeyHash(const uint256& pqkh)
 {
     return CScript() << std::vector<unsigned char>(pqkh.begin(), pqkh.end()) << OP_CHECKPQSIG;

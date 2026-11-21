@@ -143,4 +143,90 @@ BOOST_AUTO_TEST_CASE(headers_sync_state)
     BOOST_CHECK(result.success);
 }
 
+// Blazecoin: above the Phoenix-413 activation height the target of every header
+// is fixed by the anchor, the height and the previous header's time, and both
+// phases check it exactly (bug-bounty round 17: PermittedDifficultyTransition
+// passes everything there, so the presync had no difficulty bound at all).
+// HeadersSyncState does not check proof of work itself (its caller does), so
+// the headers here are not mined.
+BOOST_AUTO_TEST_CASE(headers_sync_phoenix413_target)
+{
+    Consensus::Params consensus = Params().GetConsensus();
+    const int H_A = 5;
+    consensus.phoenix413Height = H_A;
+
+    const CBlockIndex* chain_start = WITH_LOCK(::cs_main, return m_node.chainman->m_blockman.LookupBlockIndex(Params().GenesisBlock().GetHash()));
+    const CBlockHeader genesis = Params().GenesisBlock().GetBlockHeader();
+
+    // Blocks arrive one second apart (faster than the target spacing), so the
+    // Phoenix target moves away from the anchor's.
+    const int count = 60;
+    std::vector<CBlockHeader> chain;
+    uint256 prev_hash = genesis.GetHash();
+    int64_t prev_time = genesis.GetBlockTime();
+    int64_t anchor_parent_time = 0;
+    for (int height = 1; height <= count; height++) {
+        CBlockHeader h;
+        h.nVersion = genesis.nVersion;
+        h.hashPrevBlock = prev_hash;
+        h.hashMerkleRoot = ArithToUint256(height);
+        h.nTime = prev_time + 1;
+        if (height == H_A) anchor_parent_time = prev_time;
+        h.nBits = height <= H_A ? genesis.nBits :
+            CalculatePhoenix413Target(genesis.nBits, anchor_parent_time, H_A, height, prev_time,
+                                      consensus.nPowTargetSpacing, consensus.powLimit);
+        chain.push_back(h);
+        prev_hash = h.GetHash();
+        prev_time = h.GetBlockTime();
+    }
+    // The rule really asks for something else than the anchor's target up here.
+    BOOST_REQUIRE(chain.back().nBits != genesis.nBits);
+
+    // The same chain with one header above H_A kept at the easy anchor target
+    // (later headers no longer connect, which does not matter: it fails first).
+    const int bad_index = 40;
+    std::vector<CBlockHeader> bad_chain = chain;
+    BOOST_REQUIRE(bad_chain[bad_index].nBits != genesis.nBits);
+    bad_chain[bad_index].nBits = genesis.nBits;
+
+    const arith_uint256 unreachable_work = chain_start->nChainWork + arith_uint256{1} * 1000000;
+    arith_uint256 reachable_work = chain_start->nChainWork;
+    for (int i = 0; i < count - 5; i++) reachable_work += GetBlockProof(CBlockIndex(chain[i]));
+
+    // PRESYNC: the right chain is accepted...
+    HeadersSyncState good_presync(0, consensus, chain_start, unreachable_work);
+    auto result = good_presync.ProcessNextHeaders(chain, true);
+    BOOST_CHECK(result.success);
+    BOOST_CHECK(good_presync.GetState() == HeadersSyncState::State::PRESYNC);
+    BOOST_CHECK_EQUAL(good_presync.GetPresyncHeight(), count);
+
+    // ...and the wrong target ends the sync at that header.
+    HeadersSyncState bad_presync(0, consensus, chain_start, unreachable_work);
+    result = bad_presync.ProcessNextHeaders(bad_chain, true);
+    BOOST_CHECK(!result.success);
+    BOOST_CHECK(bad_presync.GetState() == HeadersSyncState::State::FINAL);
+
+    // The header AT the activation height is the anchor: the old rule, not Phoenix.
+    HeadersSyncState anchor_only(0, consensus, chain_start, unreachable_work);
+    result = anchor_only.ProcessNextHeaders({chain.begin(), chain.begin() + H_A}, true);
+    BOOST_CHECK(result.success);
+
+    // REDOWNLOAD: the right chain twice is released in full...
+    HeadersSyncState good_redownload(0, consensus, chain_start, reachable_work);
+    result = good_redownload.ProcessNextHeaders(chain, true);
+    BOOST_CHECK(result.success);
+    BOOST_REQUIRE(good_redownload.GetState() == HeadersSyncState::State::REDOWNLOAD);
+    result = good_redownload.ProcessNextHeaders(chain, true);
+    BOOST_CHECK(result.success);
+    BOOST_CHECK_EQUAL(result.pow_validated_headers.size(), chain.size());
+
+    // ...and a wrong target in the second pass is refused there too.
+    HeadersSyncState bad_redownload(0, consensus, chain_start, reachable_work);
+    result = bad_redownload.ProcessNextHeaders(chain, true);
+    BOOST_REQUIRE(bad_redownload.GetState() == HeadersSyncState::State::REDOWNLOAD);
+    result = bad_redownload.ProcessNextHeaders(bad_chain, true);
+    BOOST_CHECK(!result.success);
+    BOOST_CHECK(bad_redownload.GetState() == HeadersSyncState::State::FINAL);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

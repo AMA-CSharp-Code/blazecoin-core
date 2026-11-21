@@ -215,7 +215,9 @@ bool PermittedDifficultyTransition(const Consensus::Params& params, int64_t heig
     // Blazecoin Era 3: post-Phoenix the target legitimately moves every block as
     // a function of timestamps this signature cannot see. Exact validation still
     // happens in ContextualCheckBlockHeader via GetNextWorkRequired; this
-    // anti-DoS pre-check simply stops rejecting.
+    // anti-DoS pre-check simply stops rejecting. Headers presync / redownload,
+    // which do see the timestamps, check the exact Phoenix target themselves
+    // (HeadersSyncState::CheckPhoenix413Target).
     if (height > params.phoenix413Height) return true;
 
     if (params.fPowAllowMinDifficultyBlocks) return true;

@@ -80,7 +80,14 @@ static bool GetWalletAddressesForKey(const LegacyScriptPubKeyMan* spk_man, const
         }
     }
     if (!fLabelFound) {
-        strAddr = EncodeDestination(GetDestinationForKey(key.GetPubKey(), wallet.m_default_address_type));
+        // A legacy-wallet key can only form a key-hash or segwit-v0 address. With -addresstype=pq (or
+        // bech32m) GetDestinationForKey asserts and takes the whole daemon down (bug-bounty round 17),
+        // so the dump line falls back to the legacy address for those types.
+        OutputType type = wallet.m_default_address_type;
+        if (type != OutputType::LEGACY && type != OutputType::P2SH_SEGWIT && type != OutputType::BECH32) {
+            type = OutputType::LEGACY;
+        }
+        strAddr = EncodeDestination(GetDestinationForKey(key.GetPubKey(), type));
     }
     return fLabelFound;
 }
