@@ -3971,7 +3971,7 @@ std::optional<bool> CWallet::IsInternalScriptPubKeyMan(ScriptPubKeyMan* spk_man)
     }
 
     LOCK(desc_spk_man->cs_desc_man);
-    const auto& type = desc_spk_man->GetWalletDescriptor().descriptor->GetOutputType();
+    const auto type = desc_spk_man->GetDescriptor().GetOutputType(); // Blazecoin: no copy of the descriptor's cache (called per wallet output)
     assert(type.has_value());
 
     return GetScriptPubKeyMan(*type, /* internal= */ true) == desc_spk_man;

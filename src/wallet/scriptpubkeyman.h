@@ -694,6 +694,11 @@ public:
     void WriteDescriptor();
 
     WalletDescriptor GetWalletDescriptor() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    //! Blazecoin: the descriptor alone, for callers that run once per transaction output. GetWalletDescriptor()
+    //! copies the WalletDescriptor with its cache, and the cache of a pqkh() descriptor holds every ML-DSA-44
+    //! public key the wallet has derived (1,312 bytes each): megabytes per call on a wallet that has used a few
+    //! thousand post-quantum addresses (2026-11-22: listunspent took 13.7 s for 3,277 outputs).
+    const Descriptor& GetDescriptor() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man) { return *m_wallet_descriptor.descriptor; }
     std::unordered_set<CScript, SaltedSipHasher> GetScriptPubKeys() const override;
     std::unordered_set<CScript, SaltedSipHasher> GetScriptPubKeys(int32_t minimum_index) const;
     int32_t GetEndRange() const;

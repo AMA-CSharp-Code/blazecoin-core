@@ -146,8 +146,13 @@ std::string LabelFromValue(const UniValue& value)
 void PushParentDescriptors(const CWallet& wallet, const CScript& script_pubkey, UniValue& entry)
 {
     UniValue parent_descs(UniValue::VARR);
-    for (const auto& desc: wallet.GetWalletDescriptors(script_pubkey)) {
-        parent_descs.push_back(desc.descriptor->ToString());
+    // Blazecoin: the descriptor's string is read in place. CWallet::GetWalletDescriptors() copies each
+    // WalletDescriptor with its cache, once per output listed (see DescriptorScriptPubKeyMan::GetDescriptor).
+    for (const auto spk_man : wallet.GetScriptPubKeyMans(script_pubkey)) {
+        if (const auto desc_spk_man = dynamic_cast<DescriptorScriptPubKeyMan*>(spk_man)) {
+            LOCK(desc_spk_man->cs_desc_man);
+            parent_descs.push_back(desc_spk_man->GetDescriptor().ToString());
+        }
     }
     entry.pushKV("parent_descs", std::move(parent_descs));
 }
